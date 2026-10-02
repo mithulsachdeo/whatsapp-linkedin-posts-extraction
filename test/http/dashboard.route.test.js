@@ -134,7 +134,7 @@ function seedPosts(db) {
   return { member, olderPost, newerPost };
 }
 
-test('GET / defaults to most-recent-first and offers the most-shared sort', async () => {
+test('GET / defaults to most-recent-first and offers no order/sort control', async () => {
   const { app, close, db } = buildApp();
   try {
     seedPosts(db);
@@ -143,17 +143,21 @@ test('GET / defaults to most-recent-first and offers the most-shared sort', asyn
     const okrIndex = res.text.indexOf('okr-season-7391');
     const unattributedIndex = res.text.indexOf('unattributed-share');
     assert.ok(unattributedIndex < okrIndex, 'most-recently-shared post should render first by default');
-    assert.match(res.text, /name="sort" value="most_shared"/);
+    // The share-count sort was removed (it ranked self-promotion, not
+    // endorsement): no Order toggle and no most_shared option are rendered.
+    assert.doesNotMatch(res.text, /data-testid="sort-toggle"/);
+    assert.doesNotMatch(res.text, /most_shared/);
   } finally {
     close();
   }
 });
 
-test('GET /?sort=most_shared re-sorts by share count', async () => {
+test('GET /?sort=most_shared is ignored and still orders most-recent-first', async () => {
   const { app, close, db } = buildApp();
   try {
-    const { newerPost } = seedPosts(db);
-    // Give the older post a second share so it outranks the single-share post.
+    seedPosts(db);
+    // Give the older post extra shares; a share-count sort would float it, but
+    // that sort no longer exists, so recency must still win.
     db.prepare(
       `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES ((SELECT id FROM posts WHERE canonical_url LIKE '%okr-season%'), 'group-a', '+91 1', '2026-09-02T00:00:00.000Z')`
     ).run();
@@ -162,7 +166,7 @@ test('GET /?sort=most_shared re-sorts by share count', async () => {
     assert.equal(res.status, 200);
     const okrIndex = res.text.indexOf('okr-season-7391');
     const unattributedIndex = res.text.indexOf('unattributed-share');
-    assert.ok(okrIndex < unattributedIndex, 'the more-shared post should render first');
+    assert.ok(unattributedIndex < okrIndex, 'recency still wins; ?sort=most_shared has no effect');
   } finally {
     close();
   }

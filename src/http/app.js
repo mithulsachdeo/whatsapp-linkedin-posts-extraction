@@ -61,7 +61,9 @@ export function createApp(db, options = {}) {
 
   app.get('/', (req, res) => {
     const density = req.query.density === 'cards' ? 'cards' : 'rows';
-    const sort = req.query.sort === 'most_shared' ? 'most_shared' : 'recent';
+    // Always most-recently-shared first; a share-count sort was removed (it
+    // ranked self-promotion, not endorsement). Any stray ?sort is ignored.
+    const sort = 'recent';
     const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     // Per-device Unread/Read/All view (spec): purely a per-browser filter
     // layered on the shared query via the read_posts cookie -- never touches

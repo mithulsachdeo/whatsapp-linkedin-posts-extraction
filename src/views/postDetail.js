@@ -33,7 +33,7 @@ export function renderPostDetail(post, { isAdmin }) {
         </div>
       </div>
       <aside class="article-aside">
-        <h3 class="headline headline-md" style="margin:0" data-testid="share-history-title">${esc(sharedTitle(post.shareCount))}</h3>
+        <h3 class="headline headline-md" style="margin:0" data-testid="share-history-title">Sharing history</h3>
         <p class="standfirst" style="font-size:var(--text-sm);margin:2px 0 var(--space-4)">${esc(sharedSub(post))}</p>
         <ol style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column" data-testid="share-history">
           ${post.shares.map((share) => renderShare(share, isAdmin)).join('')}
@@ -59,10 +59,6 @@ function renderNoPreview(url) {
       <p class="dateline" style="margin:0;word-break:break-all">${esc(url)}</p>
     </div>
   `;
-}
-
-function sharedTitle(shareCount) {
-  return shareCount === 1 ? 'Shared once' : `Shared ${shareCount} times`;
 }
 
 function sharedSub(post) {

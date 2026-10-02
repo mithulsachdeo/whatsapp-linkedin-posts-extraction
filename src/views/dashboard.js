@@ -11,7 +11,7 @@ import { esc } from './layout.js';
  * @param {{
  *   isAdmin: boolean,
  *   density?: 'rows'|'cards',
- *   sort?: 'recent'|'most_shared',
+ *   sort?: 'recent',
  *   search?: string,
  *   activeMember?: { type: 'member', id: number, displayName: string } | { type: 'pending' } | null,
  *   filterOptions: { totalCount: number, pendingCount: number, members: Array<{ id: number, displayName: string, postCount: number }> },
@@ -149,10 +149,8 @@ function renderHeader(activeMember, resultCount) {
 
 function renderControls(state, filterOptions, activeMember) {
   const memberSelect = renderMemberSelect(filterOptions, activeMember);
-  const sortToggle = radioToggle('Order', 'sort', [
-    ['recent', 'Recent'],
-    ['most_shared', 'Most shared'],
-  ], state.sort, 'sort-toggle');
+  // No "Order" toggle: the board always lists most-recently-shared first.
+  // A share-count order was removed (it ranked self-promotion, not endorsement).
   const densityToggle = radioToggle('Layout', 'density', [
     ['rows', 'Index'],
     ['cards', 'Columns'],
@@ -162,7 +160,6 @@ function renderControls(state, filterOptions, activeMember) {
     <form method="get" action="/" data-testid="dashboard-controls" style="display:flex;flex-wrap:wrap;gap:var(--space-4) var(--space-6);align-items:flex-end;padding-bottom:var(--space-3);margin-bottom:var(--space-4);border-bottom:1px solid var(--color-text)">
       ${memberParamFor(activeMember) ? `<input type="hidden" name="member" value="${esc(memberParamFor(activeMember))}">` : ''}
       <input class="input" type="search" name="q" placeholder="Search the archive…" value="${esc(state.search)}" aria-label="Search posts" style="flex:1 1 240px;min-width:0">
-      ${sortToggle}
       ${densityToggle}
       ${memberSelect}
       <button type="submit" class="btn btn-sm">Apply</button>
@@ -289,18 +286,14 @@ function restoreControl(post, view) {
 
 function indexRow(post, view) {
   const title = post.previewAuthor || 'Preview unavailable';
-  const count = post.shareCount;
-  const countClass = count === 1 ? ' is-single' : '';
   const row = `
-    <a class="index-row" href="/posts/${post.id}" style="flex:1 1 auto">
-      <span class="index-no">${count === 1 ? '1×' : `${count}×`}</span>
+    <a class="index-row" href="/posts/${post.id}" style="flex:1 1 auto;grid-template-columns:minmax(0,1fr)">
       <span style="min-width:0">
         <span class="headline headline-sm" style="display:block">${esc(title)}</span>
         ${post.previewRole ? `<span class="meta" style="display:block">${esc(post.previewRole)}</span>` : ''}
         <span style="display:block;font:var(--text-sm)/1.45 var(--font-body);color:var(--color-neutral-800);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(post.previewExcerpt || post.url)}</span>
         ${indexMeta(post)}
       </span>
-      <span class="index-count${countClass}">${count}×</span>
     </a>`;
   const restore = restoreControl(post, view);
   return restore
@@ -327,7 +320,6 @@ function renderCards(posts, view) {
 
 function columnStory(post, view) {
   const title = post.previewAuthor || 'Preview unavailable';
-  const count = post.shareCount;
   const story = `
     <a class="story story-link" href="/posts/${post.id}" style="display:block">
       <div class="kicker-row">
@@ -341,7 +333,6 @@ function columnStory(post, view) {
         ${sharedBy(post.sharers)}
         <span class="dateline" style="white-space:nowrap">${esc(formatDateRange(post.firstSharedAt, post.lastSharedAt))}</span>
       </div>
-      ${count > 1 ? `<div class="story-count">Shared ${count}×</div>` : ''}
     </a>`;
   const restore = restoreControl(post, view);
   return restore

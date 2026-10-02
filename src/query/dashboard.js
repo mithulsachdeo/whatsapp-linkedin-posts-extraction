@@ -5,15 +5,18 @@
 
 import { groupName } from '../ingest/groups.js';
 
+// Only one order is meaningful: most-recently-shared first. A share-count
+// sort was removed deliberately -- repeat shares are the author bumping their
+// own link, not member endorsement, so counting them ranked self-promotion.
+// A real "most valued" order returns only with v2 explicit upvotes/reactions.
 const SORTS = {
   recent: 'last_shared_at DESC',
-  most_shared: 'shareCount DESC, last_shared_at DESC',
 };
 
 /**
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {{
- *   sort?: 'recent' | 'most_shared', memberId?: number, pending?: boolean, search?: string,
+ *   sort?: 'recent', memberId?: number, pending?: boolean, search?: string,
  *   view?: 'unread' | 'read' | 'all', readIds?: number[],
  * }} [options]
  * @returns {{ posts: Array<object>, lastUpdated: string | null }}
