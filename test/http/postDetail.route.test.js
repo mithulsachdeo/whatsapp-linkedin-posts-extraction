@@ -84,7 +84,10 @@ test('GET /posts/:id shows the Open-on-LinkedIn link and a copy-link control', a
   try {
     const postId = seedPost(db);
     const res = await request(app).get(`/posts/${postId}`);
-    assert.match(res.text, /href="https:\/\/www\.linkedin\.com\/posts\/okr-season-7391"[^>]*data-testid="open-on-linkedin"/);
+    // Open-on-LinkedIn routes through /out/:id (per readArchive.route.test.js)
+    // so the click can be recorded as read before redirecting out, rather
+    // than linking straight to LinkedIn.
+    assert.match(res.text, new RegExp(`href="/out/${postId}"[^>]*data-testid="open-on-linkedin"`));
     assert.match(res.text, /data-testid="copy-link"/);
   } finally {
     close();

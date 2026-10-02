@@ -23,7 +23,7 @@ export function renderPostDetail(post, { isAdmin }) {
         ${post.previewRole ? `<p style="color:var(--color-neutral-700);margin-bottom:var(--space-4)">${esc(post.previewRole)}</p>` : ''}
         ${preview}
         <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-4);align-items:center">
-          <a class="btn btn-primary" href="${esc(post.url)}" target="_blank" rel="noopener" style="padding:11px 20px" data-testid="open-on-linkedin">Open on LinkedIn<svg width="15" height="15" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>
+          <a class="btn btn-primary" href="/out/${post.id}" target="_blank" rel="noopener" style="padding:11px 20px" data-testid="open-on-linkedin">Open on LinkedIn<svg width="15" height="15" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>
           <button type="button" class="btn btn-secondary" style="padding:11px 20px" data-testid="copy-link" data-url="${esc(post.url)}" onclick="navigator.clipboard.writeText(this.dataset.url);this.textContent='Link copied';setTimeout(()=>{this.textContent='Copy link';},2000);">Copy link</button>
         </div>
       </article>

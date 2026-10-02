@@ -12,7 +12,10 @@ const SORTS = {
 
 /**
  * @param {import('node:sqlite').DatabaseSync} db
- * @param {{ sort?: 'recent' | 'most_shared', memberId?: number, pending?: boolean, search?: string }} [options]
+ * @param {{
+ *   sort?: 'recent' | 'most_shared', memberId?: number, pending?: boolean, search?: string,
+ *   view?: 'unread' | 'read' | 'all', readIds?: number[],
+ * }} [options]
  * @returns {{ posts: Array<object>, lastUpdated: string | null }}
  */
 export function getDashboard(db, options = {}) {
@@ -41,6 +44,23 @@ export function getDashboard(db, options = {}) {
       '(p.canonical_url LIKE ? OR p.preview_author LIKE ? OR p.preview_role LIKE ? OR p.preview_excerpt LIKE ?)'
     );
     params.push(like, like, like, like);
+  }
+
+  // Per-device read/archive filter (spec): purely a per-browser view
+  // preference layered on top of the shared query -- never changes global
+  // counts/order/attribution, only which rows come back for this request.
+  // readIds/view are derived from this device's cookie by the HTTP layer,
+  // never from any shared table.
+  const readIds = Array.isArray(options.readIds) ? options.readIds : [];
+  const view = options.view === 'read' || options.view === 'all' ? options.view : 'unread';
+  if (view === 'unread' && readIds.length > 0) {
+    conditions.push(`p.id NOT IN (${readIds.map(() => '?').join(',')})`);
+    params.push(...readIds);
+  } else if (view === 'read') {
+    // No read posts yet on this device -> always-false condition, cheaper
+    // than special-casing an empty `IN (...)` list.
+    conditions.push(readIds.length > 0 ? `p.id IN (${readIds.map(() => '?').join(',')})` : '0');
+    params.push(...readIds);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -207,6 +227,20 @@ export function getPostDetail(db, postId) {
     pendingAttribution: shareRows.some((row) => row.memberId === null),
     shares,
   };
+}
+
+/**
+ * The canonical URL for a single post, by id -- the only thing the `/out`
+ * redirect route needs. Deliberately not reusing getPostDetail: that pulls
+ * the full share history, which the redirect has no use for, and this needs
+ * to stay cheap since it's on the hot path of every outbound click.
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} postId
+ * @returns {string | null}
+ */
+export function getPostUrl(db, postId) {
+  const row = db.prepare('SELECT canonical_url AS url FROM posts WHERE id = ?').get(postId);
+  return row?.url ?? null;
 }
 
 function getSharersByPost(db, postIds) {

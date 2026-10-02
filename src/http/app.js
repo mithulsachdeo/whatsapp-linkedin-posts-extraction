@@ -2,7 +2,8 @@ import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDashboard, getMemberFilterOptions, getPostDetail } from '../query/dashboard.js';
+import { getDashboard, getMemberFilterOptions, getPostDetail, getPostUrl } from '../query/dashboard.js';
+import { readIdsFromCookieHeader, addReadId, removeReadId, serializeReadCookie } from './readCookie.js';
 import {
   getUnknownSenderReviewItems,
   getOtherLinkedInReviewItems,
@@ -58,8 +59,13 @@ export function createApp(db, options = {}) {
     const density = req.query.density === 'cards' ? 'cards' : 'rows';
     const sort = req.query.sort === 'most_shared' ? 'most_shared' : 'recent';
     const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    // Per-device Unread/Read/All view (spec): purely a per-browser filter
+    // layered on the shared query via the read_posts cookie -- never touches
+    // global counts/order/attribution. Unread is the default.
+    const view = req.query.view === 'read' || req.query.view === 'all' ? req.query.view : 'unread';
+    const readIds = readIdsFromCookieHeader(req.headers.cookie);
 
-    const queryOptions = { sort };
+    const queryOptions = { sort, view, readIds };
     if (search) queryOptions.search = search;
 
     // Filter-by-member (spec): "pending attribution" is itself a filter
@@ -81,7 +87,15 @@ export function createApp(db, options = {}) {
 
     const data = getDashboard(db, queryOptions);
     const filterOptions = getMemberFilterOptions(db);
-    const body = renderDashboard(data, { isAdmin: req.isAdmin, density, sort, search, activeMember, filterOptions });
+    const body = renderDashboard(data, {
+      isAdmin: req.isAdmin,
+      density,
+      sort,
+      search,
+      activeMember,
+      filterOptions,
+      view,
+    });
     res.send(
       layout({ title: 'Posts', active: 'posts', isAdmin: req.isAdmin, lastUpdated: data.lastUpdated, body })
     );
@@ -118,6 +132,42 @@ export function createApp(db, options = {}) {
         body: renderPostDetail(post, { isAdmin: req.isAdmin }),
       })
     );
+  });
+
+  // Outbound click-through (spec): the ONLY place a post gets marked read.
+  // Looks the post's real URL up from the DB -- never redirects to a
+  // user-supplied URL (no open redirect) -- and 404s for an unknown/
+  // non-numeric id rather than redirecting anywhere. Public, no admin gate.
+  app.get('/out/:postId', (req, res) => {
+    const postId = Number(req.params.postId);
+    const url = Number.isInteger(postId) ? getPostUrl(db, postId) : null;
+    if (!url) {
+      res.status(404).send(
+        layout({
+          title: 'Post not found',
+          active: 'posts',
+          isAdmin: req.isAdmin,
+          lastUpdated: getDashboard(db).lastUpdated,
+          body: '<h1>Post not found</h1><p><a href="/">&larr; Back to all posts</a></p>',
+        })
+      );
+      return;
+    }
+
+    const readIds = readIdsFromCookieHeader(req.headers.cookie);
+    res.setHeader('Set-Cookie', serializeReadCookie(addReadId(readIds, postId)));
+    res.redirect(url);
+  });
+
+  // Restore to Unread (spec): removes the id from the read_posts cookie.
+  // Redirects back to the Read view it was actioned from.
+  app.post('/unarchive/:postId', (req, res) => {
+    const postId = Number(req.params.postId);
+    const readIds = readIdsFromCookieHeader(req.headers.cookie);
+    if (Number.isInteger(postId)) {
+      res.setHeader('Set-Cookie', serializeReadCookie(removeReadId(readIds, postId)));
+    }
+    res.redirect(safeNext(req.body?.returnTo) ?? '/?view=read');
   });
 
   // Admin login (ticket #10): the single gate in front of every mutating

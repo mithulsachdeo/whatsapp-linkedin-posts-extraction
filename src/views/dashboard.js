@@ -20,19 +20,20 @@ import { esc } from './layout.js';
  */
 export function renderDashboard(
   { posts },
-  { isAdmin, density = 'rows', sort = 'recent', search = '', activeMember = null, filterOptions }
+  { isAdmin, density = 'rows', sort = 'recent', search = '', activeMember = null, filterOptions, view = 'unread' }
 ) {
   const hasAnyData = (filterOptions?.totalCount ?? 0) > 0;
+  const state = { search, sort, density, activeMember, view };
   if (!hasAnyData) {
-    return renderEmptyState({ isAdmin });
+    return renderEmptyState({ isAdmin, state });
   }
 
-  const state = { search, sort, density, activeMember };
   const sidebar = renderMemberSidebar(filterOptions, activeMember, state);
   const header = renderHeader(activeMember, posts.length);
   const controls = renderControls(state, filterOptions, activeMember);
+  const viewToggle = renderViewToggle(state);
   const results =
-    posts.length === 0 ? renderNoResults(search, activeMember) : renderPostList(posts, density);
+    posts.length === 0 ? renderNoResults(search, activeMember) : renderPostList(posts, density, view);
 
   return `
     <style>
@@ -46,6 +47,7 @@ export function renderDashboard(
       ${sidebar}
       <section style="flex:1 1 480px;min-width:0">
         ${header}
+        ${viewToggle}
         ${controls}
         ${results}
       </section>
@@ -53,8 +55,27 @@ export function renderDashboard(
   `;
 }
 
-function renderPostList(posts, density) {
-  return density === 'cards' ? renderCards(posts) : renderRows(posts);
+function renderPostList(posts, density, view) {
+  return density === 'cards' ? renderCards(posts, view) : renderRows(posts, view);
+}
+
+// Per-device Unread/Read/All toggle (spec): a plain server-rendered link
+// group, no client JS -- each option is a full GET carrying forward the rest
+// of the dashboard's state (search/sort/density/member) via buildHref.
+function renderViewToggle(state) {
+  const options = [
+    ['unread', 'Unread'],
+    ['read', 'Read'],
+    ['all', 'All'],
+  ];
+  const links = options
+    .map(([value, label]) => {
+      const active = (state.view ?? 'unread') === value;
+      const activeStyle = active ? 'background:var(--color-accent-200);color:var(--color-accent-900);font-weight:600' : '';
+      return `<a href="${buildHref(state, { view: value })}" aria-current="${active}" style="text-decoration:none;color:inherit;padding:6px 14px;border-radius:999px;font-size:14px;${activeStyle}">${label}</a>`;
+    })
+    .join('');
+  return `<div data-testid="view-toggle" role="radiogroup" aria-label="View" style="display:inline-flex;gap:2px;margin:var(--space-3) 0;background:var(--color-surface);border-radius:999px;padding:3px">${links}</div>`;
 }
 
 // Builds a /?… href carrying forward the current search/sort/density/member
@@ -68,6 +89,7 @@ function buildHref(state, overrides = {}) {
   if (merged.search) params.set('q', merged.search);
   if (merged.sort && merged.sort !== 'recent') params.set('sort', merged.sort);
   if (merged.density && merged.density !== 'rows') params.set('density', merged.density);
+  if (merged.view && merged.view !== 'unread') params.set('view', merged.view);
 
   const memberParam = 'member' in overrides ? overrides.member : memberParamFor(merged.activeMember);
   if (memberParam) params.set('member', memberParam);
@@ -237,12 +259,12 @@ function renderNoResults(search, activeMember) {
   `;
 }
 
-function renderRows(posts) {
-  const items = posts.map((post) => `<li style="list-style:none">${renderRow(post)}</li>`).join('');
+function renderRows(posts, view) {
+  const items = posts.map((post) => `<li style="list-style:none">${renderRow(post, view)}</li>`).join('');
   return `<ul style="padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-2)" data-testid="post-list-rows">${items}</ul>`;
 }
 
-function renderRow(post) {
+function renderRow(post, view) {
   return `
     <div style="display:flex;gap:var(--space-4);align-items:flex-start;padding:var(--space-3) var(--space-4);border-radius:var(--radius-lg);background:var(--color-surface)">
       ${shareCountBadge(post)}
@@ -251,15 +273,16 @@ function renderRow(post) {
         ${postExcerpt(post)}
         ${postMeta(post)}
       </div>
+      ${restoreControl(post, view)}
     </div>`;
 }
 
-function renderCards(posts) {
-  const items = posts.map((post) => `<li style="list-style:none">${renderCard(post)}</li>`).join('');
+function renderCards(posts, view) {
+  const items = posts.map((post) => `<li style="list-style:none">${renderCard(post, view)}</li>`).join('');
   return `<ul class="card-grid" style="padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--space-3)" data-testid="post-list-cards">${items}</ul>`;
 }
 
-function renderCard(post) {
+function renderCard(post, view) {
   return `
     <div class="card" style="padding:var(--space-4);gap:var(--space-2);display:flex;flex-direction:column;height:100%">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-2)">
@@ -268,7 +291,19 @@ function renderCard(post) {
       </div>
       ${postExcerpt(post)}
       ${postMeta(post)}
+      ${restoreControl(post, view)}
     </div>`;
+}
+
+// Restore-to-Unread control (spec): only shown in the Read view, undoes the
+// read_posts cookie entry for this post via a plain server round-trip.
+function restoreControl(post, view) {
+  if (view !== 'read') return '';
+  return `
+    <form method="post" action="/unarchive/${post.id}" style="flex:none">
+      <input type="hidden" name="returnTo" value="/?view=read">
+      <button type="submit" class="btn btn-ghost" style="padding:6px 14px;font-size:13px" data-testid="restore-post">Restore</button>
+    </form>`;
 }
 
 function shareCountBadge(post, small = false) {
@@ -334,7 +369,7 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 }
 
-function renderEmptyState({ isAdmin }) {
+function renderEmptyState({ isAdmin, state }) {
   const adminCopy = `
     <p style="font-size:16px;max-width:46ch;text-wrap:pretty">Import a WhatsApp chat export and every LinkedIn post shared in it shows up here once, with who shared it and when.</p>
     <a class="btn btn-primary" href="/import" style="padding:12px 22px;font-size:15px;display:inline-block;margin-top:var(--space-2)">Import a chat export</a>
@@ -351,6 +386,7 @@ function renderEmptyState({ isAdmin }) {
         <span style="width:72px;height:72px;border-radius:50%;background:var(--color-neutral-300);margin-left:-22px"></span>
       </div>
       <h1 style="font-size:40px" data-testid="empty-state-title">No posts yet</h1>
+      ${renderViewToggle(state)}
       ${isAdmin ? adminCopy : memberCopy}
     </div>
   `;
