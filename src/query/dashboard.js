@@ -52,6 +52,8 @@ export function getDashboard(db, options = {}) {
     .prepare("SELECT MAX(completed_at) AS lastUpdated FROM import_batches WHERE status = 'COMPLETE'")
     .get();
 
+  const sharersByPost = getSharersByPost(db, rows.map((row) => row.id));
+
   return {
     posts: rows.map((row) => ({
       id: row.id,
@@ -65,7 +67,33 @@ export function getDashboard(db, options = {}) {
       shareCount: row.shareCount,
       distinctSharerCount: row.distinctSharerCount,
       pendingAttribution: row.pendingShareCount > 0,
+      // Member display name AND the raw sender/phone, per spec -- acceptable
+      // while the deployment is internal-for-now. Deduplicated by the pair so
+      // a member who shared the same post from the same raw sender string
+      // more than once is listed once.
+      sharers: sharersByPost.get(row.id) ?? [],
     })),
     lastUpdated: lastUpdatedRow?.lastUpdated ?? null,
   };
+}
+
+function getSharersByPost(db, postIds) {
+  const byPost = new Map();
+  if (postIds.length === 0) return byPost;
+
+  const placeholders = postIds.map(() => '?').join(',');
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT se.post_id AS postId, se.raw_sender AS rawSender, m.display_name AS displayName
+       FROM sharing_events se
+       LEFT JOIN members m ON m.id = se.member_id
+       WHERE se.post_id IN (${placeholders})`
+    )
+    .all(...postIds);
+
+  for (const row of rows) {
+    if (!byPost.has(row.postId)) byPost.set(row.postId, []);
+    byPost.get(row.postId).push({ displayName: row.displayName ?? null, rawSender: row.rawSender });
+  }
+  return byPost;
 }

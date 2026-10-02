@@ -3,15 +3,17 @@ import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDashboard } from '../query/dashboard.js';
+import { getUnknownSenderReviewItems, getMembers } from '../query/review.js';
 import { layout } from '../views/layout.js';
 import { renderDashboard } from '../views/dashboard.js';
 import { renderImportPage } from '../views/import.js';
-import { renderReviewPlaceholder } from '../views/placeholders.js';
+import { renderReviewPage } from '../views/review.js';
 import { detectAdmin, requireAdmin } from './adminAuth.js';
 import { WhatsAppTxtAdapter } from '../ingest/adapter.js';
 import { ingest } from '../ingest/ingest.js';
 import { GROUPS } from '../ingest/groups.js';
 import { setPreviewOverride } from '../preview/previewCache.js';
+import { mapAliasToMember, createMemberAndMapAlias, undoAliasMapping } from '../identity/aliases.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INDUSTRY_DIR = path.join(__dirname, '..', '..', 'Industry');
@@ -94,15 +96,71 @@ export function createApp(db, options = {}) {
 
   app.get('/review', requireAdmin, (req, res) => {
     const data = getDashboard(db);
+    const items = getUnknownSenderReviewItems(db);
+    const members = getMembers(db);
+    const toast = buildToastFromQuery(req.query);
     res.send(
       layout({
         title: 'Review',
         active: 'review',
         isAdmin: req.isAdmin,
         lastUpdated: data.lastUpdated,
-        body: renderReviewPlaceholder(),
+        body: renderReviewPage({ items, members }, { toast }),
       })
     );
+  });
+
+  // Review action (spec): map an unknown sender to an existing member, or
+  // create a new one -- either way retroactively re-attributes every past
+  // sharing event from that raw sender. Redirects back to /review with the
+  // toast encoded in the query string so the Undo form can reverse exactly
+  // this match.
+  app.post('/review/:id/match', requireAdmin, (req, res) => {
+    const item = getUnknownSenderReviewItems(db).find((i) => i.id === Number(req.params.id));
+    if (!item) {
+      res.redirect('/review');
+      return;
+    }
+
+    const { memberId, newMemberName } = req.body ?? {};
+    const trimmedName = newMemberName?.trim();
+
+    let memberName;
+    let createdMemberId = '';
+    if (memberId) {
+      const member = getMembers(db).find((m) => m.id === Number(memberId));
+      if (!member) {
+        res.redirect('/review');
+        return;
+      }
+      mapAliasToMember(db, item.rawSender, member.id);
+      memberName = member.displayName;
+    } else if (trimmedName) {
+      createdMemberId = createMemberAndMapAlias(db, item.rawSender, trimmedName);
+      memberName = trimmedName;
+    } else {
+      res.redirect('/review');
+      return;
+    }
+
+    const params = new URLSearchParams({
+      matched: '1',
+      rawSender: item.rawSender,
+      memberName,
+      createdMemberId: String(createdMemberId || ''),
+    });
+    res.redirect(`/review?${params.toString()}`);
+  });
+
+  // Undo (spec): reverses the match a review-screen toast is still showing.
+  app.post('/review/undo', requireAdmin, (req, res) => {
+    const { rawSender, createdMemberId } = req.body ?? {};
+    if (rawSender) {
+      undoAliasMapping(db, rawSender, {
+        createdMemberId: createdMemberId ? Number(createdMemberId) : undefined,
+      });
+    }
+    res.redirect('/review');
   });
 
   // Admin action (spec): manually set/edit a post's preview. Overrides
@@ -120,4 +178,13 @@ export function createApp(db, options = {}) {
   });
 
   return app;
+}
+
+function buildToastFromQuery(query) {
+  if (query.matched !== '1' || !query.rawSender || !query.memberName) return null;
+  return {
+    rawSender: String(query.rawSender),
+    memberName: String(query.memberName),
+    createdMemberId: query.createdMemberId ? Number(query.createdMemberId) : null,
+  };
 }

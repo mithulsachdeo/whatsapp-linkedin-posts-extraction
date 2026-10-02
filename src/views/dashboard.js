@@ -99,7 +99,21 @@ function postMeta(post) {
       <span>${sharerCount}</span>
       ${dateRange ? `<span>${esc(dateRange)}</span>` : ''}
       ${post.pendingAttribution ? '<span class="tag tag-accent-2">Pending attribution</span>' : ''}
-    </div>`;
+    </div>
+    ${sharedByLine(post.sharers)}`;
+}
+
+// Shows the member display name AND the raw sender/phone for every sharer
+// (spec: acceptable while the deployment is internal-for-now). A sharer with
+// no resolved member shows the raw sender alone, labelled pending.
+function sharedByLine(sharers) {
+  if (!sharers || sharers.length === 0) return '';
+  const labels = sharers.map((s) =>
+    s.displayName
+      ? `${esc(s.displayName)} <span style="color:var(--color-neutral-600)">(${esc(s.rawSender)})</span>`
+      : `${esc(s.rawSender)} <span style="color:var(--color-neutral-600)">(pending attribution)</span>`
+  );
+  return `<div data-testid="shared-by" style="font-size:12px;color:var(--color-neutral-700);margin-top:2px">Shared by ${labels.join(', ')}</div>`;
 }
 
 function formatDateRange(firstSharedAt, lastSharedAt) {
