@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDashboard, getMemberFilterOptions } from '../query/dashboard.js';
+import { getDashboard, getMemberFilterOptions, getPostDetail } from '../query/dashboard.js';
 import {
   getUnknownSenderReviewItems,
   getOtherLinkedInReviewItems,
@@ -12,6 +12,7 @@ import {
 import { layout } from '../views/layout.js';
 import { renderDashboard } from '../views/dashboard.js';
 import { renderImportPage } from '../views/import.js';
+import { renderPostDetail } from '../views/postDetail.js';
 import { renderReviewPage } from '../views/review.js';
 import { detectAdmin, requireAdmin } from './adminAuth.js';
 import { WhatsAppTxtAdapter } from '../ingest/adapter.js';
@@ -82,6 +83,39 @@ export function createApp(db, options = {}) {
     const body = renderDashboard(data, { isAdmin: req.isAdmin, density, sort, search, activeMember, filterOptions });
     res.send(
       layout({ title: 'Posts', active: 'posts', isAdmin: req.isAdmin, lastUpdated: data.lastUpdated, body })
+    );
+  });
+
+  // Post detail (ticket #8): public, no login, like the rest of the
+  // dashboard -- cached preview/URL-only block, Open-on-LinkedIn/Copy-link
+  // actions, and the full share history. An unknown or non-numeric id 404s
+  // rather than falling back to the dashboard, since this is a direct link.
+  app.get('/posts/:id', (req, res) => {
+    const postId = Number(req.params.id);
+    const post = Number.isInteger(postId) ? getPostDetail(db, postId) : null;
+    const lastUpdated = getDashboard(db).lastUpdated;
+
+    if (!post) {
+      res.status(404).send(
+        layout({
+          title: 'Post not found',
+          active: 'posts',
+          isAdmin: req.isAdmin,
+          lastUpdated,
+          body: '<h1>Post not found</h1><p><a href="/">&larr; Back to all posts</a></p>',
+        })
+      );
+      return;
+    }
+
+    res.send(
+      layout({
+        title: post.previewAuthor || 'Post',
+        active: 'posts',
+        isAdmin: req.isAdmin,
+        lastUpdated,
+        body: renderPostDetail(post, { isAdmin: req.isAdmin }),
+      })
     );
   });
 

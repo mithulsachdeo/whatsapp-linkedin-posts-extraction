@@ -282,9 +282,12 @@ function shareCountBadge(post, small = false) {
 
 function postHeadline(post) {
   const title = post.previewAuthor || 'Preview unavailable';
+  // Links to the post detail view (ticket #8) rather than straight out to
+  // LinkedIn -- the detail page is where "Open on LinkedIn" lives, plus the
+  // full share history.
   return `
     <div style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;min-width:0">
-      <a href="${esc(post.url)}" target="_blank" rel="noopener" style="font-weight:700;color:var(--color-text)">${esc(title)}</a>
+      <a href="/posts/${post.id}" style="font-weight:700;color:var(--color-text)">${esc(title)}</a>
       ${post.previewRole ? `<span style="font-size:13px;color:var(--color-neutral-700)">${esc(post.previewRole)}</span>` : ''}
     </div>`;
 }

@@ -3,6 +3,8 @@
 // spec's testing decisions, tests exercise the ingestion service and read
 // results back out here rather than poking at internal tables directly.
 
+import { groupName } from '../ingest/groups.js';
+
 const SORTS = {
   recent: 'last_shared_at DESC',
   most_shared: 'shareCount DESC, last_shared_at DESC',
@@ -121,6 +123,90 @@ export function getMemberFilterOptions(db) {
     .all();
 
   return { totalCount, pendingCount, members };
+}
+
+/**
+ * Full share history for the post-detail view (ticket #8): the cached
+ * preview fields plus every sharing event, oldest first, each carrying its
+ * sharer (resolved member display name, or null -> "Pending attribution"
+ * in the view), timestamp, group (admin-only per the group-hidden rule --
+ * the query always returns it, the view decides whether to render it), and
+ * optional note. The earliest event is flagged `isFirstShare`.
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} postId
+ * @returns {{
+ *   id: number, url: string,
+ *   previewAuthor: string|null, previewRole: string|null, previewExcerpt: string|null, previewUnavailable: boolean,
+ *   firstSharedAt: string|null, lastSharedAt: string|null,
+ *   shareCount: number, distinctSharerCount: number, pendingAttribution: boolean,
+ *   shares: Array<{ id: number, displayName: string|null, rawSender: string, groupId: string, groupName: string, timestamp: string, note: string|null, isFirstShare: boolean }>
+ * } | null}
+ */
+export function getPostDetail(db, postId) {
+  const post = db
+    .prepare(
+      `SELECT
+        p.id,
+        p.canonical_url AS url,
+        p.preview_author AS previewAuthor,
+        p.preview_role AS previewRole,
+        p.preview_excerpt AS previewExcerpt,
+        p.preview_unavailable AS previewUnavailable,
+        p.first_shared_at AS firstSharedAt,
+        p.last_shared_at AS lastSharedAt
+      FROM posts p
+      WHERE p.id = ?`
+    )
+    .get(postId);
+
+  if (!post) return null;
+
+  const shareRows = db
+    .prepare(
+      `SELECT
+        se.id,
+        se.raw_sender AS rawSender,
+        se.member_id AS memberId,
+        m.display_name AS displayName,
+        se.group_id AS groupId,
+        se.message_timestamp AS timestamp,
+        se.note
+      FROM sharing_events se
+      LEFT JOIN members m ON m.id = se.member_id
+      WHERE se.post_id = ?
+      ORDER BY se.message_timestamp ASC, se.id ASC`
+    )
+    .all(postId);
+
+  const shares = shareRows.map((row, index) => ({
+    id: row.id,
+    displayName: row.displayName ?? null,
+    rawSender: row.rawSender,
+    groupId: row.groupId,
+    groupName: groupName(row.groupId),
+    timestamp: row.timestamp,
+    note: row.note ?? null,
+    isFirstShare: index === 0,
+  }));
+
+  const distinctSharerCount = new Set(
+    shareRows.map((row) => (row.memberId ? `m:${row.memberId}` : `r:${row.rawSender}`))
+  ).size;
+
+  return {
+    id: post.id,
+    url: post.url,
+    previewAuthor: post.previewAuthor,
+    previewRole: post.previewRole,
+    previewExcerpt: post.previewExcerpt,
+    previewUnavailable: Boolean(post.previewUnavailable),
+    firstSharedAt: post.firstSharedAt,
+    lastSharedAt: post.lastSharedAt,
+    shareCount: shares.length,
+    distinctSharerCount,
+    pendingAttribution: shareRows.some((row) => row.memberId === null),
+    shares,
+  };
 }
 
 function getSharersByPost(db, postIds) {

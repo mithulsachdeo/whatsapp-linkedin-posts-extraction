@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/testDb.js';
-import { getDashboard, getMemberFilterOptions } from '../../src/query/dashboard.js';
+import { getDashboard, getMemberFilterOptions, getPostDetail } from '../../src/query/dashboard.js';
 
 test('getDashboard returns no posts and a null lastUpdated on an empty DB', () => {
   const { db, close } = createTestDb();
@@ -207,6 +207,93 @@ test('getDashboard search matches fetched preview author, role, and excerpt text
 
     const excerptResult = getDashboard(db, { search: 'OKR' });
     assert.deepEqual(excerptResult.posts.map((p) => p.url), ['https://www.linkedin.com/posts/b']);
+  } finally {
+    close();
+  }
+});
+
+test('getPostDetail returns null for an id that does not exist', () => {
+  const { db, close } = createTestDb();
+  try {
+    assert.equal(getPostDetail(db, 999), null);
+  } finally {
+    close();
+  }
+});
+
+test('getPostDetail returns the full share history, oldest first, flagging the earliest as first share', () => {
+  const { db, close } = createTestDb();
+  try {
+    const post = db
+      .prepare(
+        `INSERT INTO posts (canonical_url, preview_author, preview_role, preview_excerpt, first_shared_at, last_shared_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        'https://www.linkedin.com/posts/okr-season-7391',
+        'Ananya Rao',
+        'PM @ Acme',
+        'Notes on our Q4 OKRs.',
+        '2026-09-01T00:00:00.000Z',
+        '2026-09-05T00:00:00.000Z'
+      );
+    const postId = Number(post.lastInsertRowid);
+    const member = db.prepare('INSERT INTO members (display_name) VALUES (?)').run('Karan Mehta');
+
+    // Later share inserted first, to prove ordering comes from the
+    // timestamp, not insertion order.
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp, note)
+       VALUES (?, 'pm-collective', 'Karan Mehta', ?, '2026-09-05T00:00:00.000Z', 'Relevant for Q4')`
+    ).run(postId, Number(member.lastInsertRowid));
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp)
+       VALUES (?, 'product-chai', '+91 90000 00000', '2026-09-01T00:00:00.000Z')`
+    ).run(postId);
+
+    const detail = getPostDetail(db, postId);
+
+    assert.equal(detail.id, postId);
+    assert.equal(detail.url, 'https://www.linkedin.com/posts/okr-season-7391');
+    assert.equal(detail.previewAuthor, 'Ananya Rao');
+    assert.equal(detail.shareCount, 2);
+    assert.equal(detail.distinctSharerCount, 2);
+    assert.equal(detail.pendingAttribution, true);
+
+    assert.equal(detail.shares.length, 2);
+    const [first, second] = detail.shares;
+    assert.equal(first.rawSender, '+91 90000 00000');
+    assert.equal(first.displayName, null);
+    assert.equal(first.isFirstShare, true);
+    assert.equal(first.note, null);
+    assert.equal(first.groupName, 'Product Chai');
+
+    assert.equal(second.displayName, 'Karan Mehta');
+    assert.equal(second.rawSender, 'Karan Mehta');
+    assert.equal(second.isFirstShare, false);
+    assert.equal(second.note, 'Relevant for Q4');
+    assert.equal(second.groupName, 'PM Collective');
+  } finally {
+    close();
+  }
+});
+
+test('getPostDetail reports preview_unavailable and still returns the share history', () => {
+  const { db, close } = createTestDb();
+  try {
+    const post = db
+      .prepare(`INSERT INTO posts (canonical_url, preview_unavailable) VALUES (?, 1)`)
+      .run('https://www.linkedin.com/posts/no-preview-7392');
+    const postId = Number(post.lastInsertRowid);
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp)
+       VALUES (?, 'product-chai', '+91 1', '2026-09-01T00:00:00.000Z')`
+    ).run(postId);
+
+    const detail = getPostDetail(db, postId);
+    assert.equal(detail.previewUnavailable, true);
+    assert.equal(detail.previewAuthor, null);
+    assert.equal(detail.shares.length, 1);
   } finally {
     close();
   }
