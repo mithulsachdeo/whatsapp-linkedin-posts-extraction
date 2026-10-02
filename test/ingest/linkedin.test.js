@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractPostUrls, canonicalizeUrl } from '../../src/ingest/linkedin.js';
+import { extractPostUrls, extractLinkedInUrls, classifyLinkedInUrl, canonicalizeUrl } from '../../src/ingest/linkedin.js';
 
 test('extracts /posts/, /feed/update/urn:li:activity:, and /pulse/ URLs', () => {
   const text = [
@@ -37,4 +37,17 @@ test('canonicalizeUrl lowercases host, strips tracking params, and drops trailin
 
 test('canonicalizeUrl returns null for a non-post LinkedIn URL', () => {
   assert.equal(canonicalizeUrl('https://www.linkedin.com/in/someone'), null);
+});
+
+test('extractLinkedInUrls also matches lnkd.in short links', () => {
+  const urls = extractLinkedInUrls('check this out https://lnkd.in/abc123 and https://example.com/foo');
+  assert.deepEqual(urls, ['https://lnkd.in/abc123']);
+});
+
+test('classifyLinkedInUrl classifies an lnkd.in URL as SHORT_LINK', () => {
+  assert.equal(classifyLinkedInUrl('https://lnkd.in/abc123'), 'SHORT_LINK');
+});
+
+test('classifyLinkedInUrl returns null for a non-LinkedIn, non-short-link URL', () => {
+  assert.equal(classifyLinkedInUrl('https://example.com/foo'), null);
 });

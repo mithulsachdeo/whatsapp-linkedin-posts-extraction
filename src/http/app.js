@@ -3,7 +3,12 @@ import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDashboard } from '../query/dashboard.js';
-import { getUnknownSenderReviewItems, getOtherLinkedInReviewItems, getMembers } from '../query/review.js';
+import {
+  getUnknownSenderReviewItems,
+  getOtherLinkedInReviewItems,
+  getUnresolvedShortLinkReviewItems,
+  getMembers,
+} from '../query/review.js';
 import { layout } from '../views/layout.js';
 import { renderDashboard } from '../views/dashboard.js';
 import { renderImportPage } from '../views/import.js';
@@ -19,6 +24,11 @@ import {
   promoteOtherLinkedInItem,
   undoOtherLinkedInAction,
 } from '../review/otherLinkedIn.js';
+import {
+  dismissShortLinkItem,
+  resolveShortLinkItem,
+  undoShortLinkAction,
+} from '../review/shortLink.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INDUSTRY_DIR = path.join(__dirname, '..', '..', 'Industry');
@@ -80,6 +90,7 @@ export function createApp(db, options = {}) {
           filename: loaded.sourceFilename ?? file.originalname,
           contentHash: loaded.contentHash,
           previewFetcher: options.previewFetcher,
+          shortLinkResolver: options.shortLinkResolver,
         });
         body = renderImportPage({ result });
       } catch (err) {
@@ -103,16 +114,22 @@ export function createApp(db, options = {}) {
     const data = getDashboard(db);
     const items = getUnknownSenderReviewItems(db);
     const otherLinkedInItems = getOtherLinkedInReviewItems(db);
+    const shortLinkItems = getUnresolvedShortLinkReviewItems(db);
     const members = getMembers(db);
     const toast = buildToastFromQuery(req.query);
     const otherLinkedInToast = buildOtherLinkedInToastFromQuery(req.query);
+    const shortLinkToast = buildShortLinkToastFromQuery(req.query);
+    const shortLinkError = buildShortLinkErrorFromQuery(req.query);
     res.send(
       layout({
         title: 'Review',
         active: 'review',
         isAdmin: req.isAdmin,
         lastUpdated: data.lastUpdated,
-        body: renderReviewPage({ items, members, otherLinkedInItems }, { toast, otherLinkedInToast }),
+        body: renderReviewPage(
+          { items, members, otherLinkedInItems, shortLinkItems },
+          { toast, otherLinkedInToast, shortLinkToast, shortLinkError }
+        ),
       })
     );
   });
@@ -198,6 +215,39 @@ export function createApp(db, options = {}) {
     res.redirect('/review');
   });
 
+  // Review actions (spec): paste the real URL a short link pointed to --
+  // re-runs it through the classify/canonicalize/dedup pipeline
+  // (src/review/shortLink.js) -- or dismiss. Both reversible via the shared
+  // undo route.
+  app.post('/review/short/:id/resolve', requireAdmin, (req, res) => {
+    const id = Number(req.params.id);
+    const item = getUnresolvedShortLinkReviewItems(db).find((i) => i.id === id);
+    if (!item) {
+      res.redirect('/review');
+      return;
+    }
+    if (!resolveShortLinkItem(db, id, req.body?.resolvedUrl)) {
+      res.redirect(`/review?shortError=1&shortErrorId=${id}`);
+      return;
+    }
+    res.redirect(`/review?${buildShortLinkRedirectParams('resolved', item)}`);
+  });
+
+  app.post('/review/short/:id/dismiss', requireAdmin, (req, res) => {
+    const id = Number(req.params.id);
+    const item = getUnresolvedShortLinkReviewItems(db).find((i) => i.id === id);
+    if (!item || !dismissShortLinkItem(db, id)) {
+      res.redirect('/review');
+      return;
+    }
+    res.redirect(`/review?${buildShortLinkRedirectParams('dismissed', item)}`);
+  });
+
+  app.post('/review/short/:id/undo', requireAdmin, (req, res) => {
+    undoShortLinkAction(db, Number(req.params.id));
+    res.redirect('/review');
+  });
+
   // Admin action (spec): manually set/edit a post's preview. Overrides
   // whatever was fetched (or not) and is never overwritten by a later fetch
   // -- see src/preview/previewCache.js's preview_edited guard.
@@ -235,4 +285,22 @@ function buildOtherLinkedInToastFromQuery(query) {
     id: Number(query.otherId),
     url: String(query.otherUrl),
   };
+}
+
+function buildShortLinkRedirectParams(action, item) {
+  return new URLSearchParams({ shortAction: action, shortId: String(item.id), shortUrl: item.url }).toString();
+}
+
+function buildShortLinkToastFromQuery(query) {
+  if (!['dismissed', 'resolved'].includes(query.shortAction) || !query.shortId || !query.shortUrl) return null;
+  return {
+    action: query.shortAction,
+    id: Number(query.shortId),
+    url: String(query.shortUrl),
+  };
+}
+
+function buildShortLinkErrorFromQuery(query) {
+  if (query.shortError !== '1' || !query.shortErrorId) return null;
+  return { id: Number(query.shortErrorId) };
 }

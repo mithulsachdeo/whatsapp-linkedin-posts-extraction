@@ -59,6 +59,32 @@ export function getOtherLinkedInReviewItems(db) {
 
 /**
  * @param {import('node:sqlite').DatabaseSync} db
+ * @returns {Array<{ id: number, url: string, rawSender: string, timestamp: string, note: string|null, createdAt: string }>}
+ */
+export function getUnresolvedShortLinkReviewItems(db) {
+  const rows = db
+    .prepare(
+      `SELECT id, payload, created_at AS createdAt FROM review_items
+       WHERE kind = 'UNRESOLVED_SHORT_LINK' AND status = 'OPEN'
+       ORDER BY created_at ASC`
+    )
+    .all();
+
+  return rows.map((row) => {
+    const payload = JSON.parse(row.payload);
+    return {
+      id: row.id,
+      url: payload.url,
+      rawSender: payload.rawSender,
+      timestamp: payload.timestamp,
+      note: payload.note ?? null,
+      createdAt: row.createdAt,
+    };
+  });
+}
+
+/**
+ * @param {import('node:sqlite').DatabaseSync} db
  * @returns {Array<{ id: number, displayName: string }>}
  */
 export function getMembers(db) {

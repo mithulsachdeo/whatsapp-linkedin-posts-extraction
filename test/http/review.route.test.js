@@ -12,6 +12,7 @@ const GROUP = 'group-a';
 const RAW_SENDER = '+91 90000 00000';
 const TEXT = `30/09/26, 10:15 - ${RAW_SENDER}: https://www.linkedin.com/posts/someone_activity-1-abcd`;
 const OTHER_LINKEDIN_TEXT = `30/09/26, 10:15 - ${RAW_SENDER}: https://www.linkedin.com/in/priya-sharma`;
+const SHORT_LINK_TEXT = `30/09/26, 10:15 - ${RAW_SENDER}: https://lnkd.in/abc123`;
 
 function buildApp() {
   const { db, close } = createTestDb();
@@ -266,6 +267,131 @@ test('POST /review/other/:id/undo reverses a dismiss or promote and reopens the 
 
     const reviewPage = await request(app).get('/review').set('x-admin-token', ADMIN_TOKEN);
     assert.match(reviewPage.text, /priya-sharma/);
+  } finally {
+    close();
+  }
+});
+
+test('GET /review lists an unresolved short link under "Unresolved short links"', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    const result = ingest(db, SHORT_LINK_TEXT, GROUP); // default resolver always fails
+    await result.shortLinkResolutionsSettled;
+
+    const res = await request(app).get('/review').set('x-admin-token', ADMIN_TOKEN);
+    assert.equal(res.status, 200);
+    assert.match(res.text, /https:\/\/lnkd\.in\/abc123/);
+    assert.match(res.text, /Unresolved short links/);
+  } finally {
+    close();
+  }
+});
+
+test('POST /review/short/:id/dismiss is forbidden without the admin token', async () => {
+  const { app, close } = buildApp();
+  try {
+    const res = await request(app).post('/review/short/1/dismiss');
+    assert.equal(res.status, 403);
+  } finally {
+    close();
+  }
+});
+
+test('POST /review/short/:id/dismiss removes the link from the open review queue and shows an undoable toast', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    const result = ingest(db, SHORT_LINK_TEXT, GROUP);
+    await result.shortLinkResolutionsSettled;
+    const reviewItem = db.prepare("SELECT id FROM review_items WHERE kind = 'UNRESOLVED_SHORT_LINK'").get();
+
+    const res = await request(app)
+      .post(`/review/short/${reviewItem.id}/dismiss`)
+      .set('x-admin-token', ADMIN_TOKEN);
+    assert.equal(res.status, 302);
+    assert.match(res.headers.location, /^\/review\?/);
+
+    const row = db.prepare('SELECT status FROM review_items WHERE id = ?').get(reviewItem.id);
+    assert.equal(row.status, 'DISMISSED');
+
+    const reviewPage = await request(app).get(res.headers.location).set('x-admin-token', ADMIN_TOKEN);
+    assert.match(reviewPage.text, /dismissed/);
+    assert.match(reviewPage.text, /No unresolved short links/);
+  } finally {
+    close();
+  }
+});
+
+test('POST /review/short/:id/resolve with a pasted post URL reclassifies it as a post on the dashboard', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    const result = ingest(db, SHORT_LINK_TEXT, GROUP);
+    await result.shortLinkResolutionsSettled;
+    const reviewItem = db.prepare("SELECT id FROM review_items WHERE kind = 'UNRESOLVED_SHORT_LINK'").get();
+
+    const res = await request(app)
+      .post(`/review/short/${reviewItem.id}/resolve`)
+      .set('x-admin-token', ADMIN_TOKEN)
+      .type('form')
+      .send({ resolvedUrl: 'https://www.linkedin.com/posts/priya-sharma_activity-1-abcd' });
+    assert.equal(res.status, 302);
+
+    const row = db.prepare('SELECT status FROM review_items WHERE id = ?').get(reviewItem.id);
+    assert.equal(row.status, 'RESOLVED');
+
+    const dashboard = await request(app).get('/');
+    assert.match(dashboard.text, /priya-sharma/);
+
+    const toastPage = await request(app).get(res.headers.location).set('x-admin-token', ADMIN_TOKEN);
+    assert.match(toastPage.text, /resolved and added to the board/);
+  } finally {
+    close();
+  }
+});
+
+test('POST /review/short/:id/resolve with an unusable value keeps the item open and shows an error', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    const result = ingest(db, SHORT_LINK_TEXT, GROUP);
+    await result.shortLinkResolutionsSettled;
+    const reviewItem = db.prepare("SELECT id FROM review_items WHERE kind = 'UNRESOLVED_SHORT_LINK'").get();
+
+    const res = await request(app)
+      .post(`/review/short/${reviewItem.id}/resolve`)
+      .set('x-admin-token', ADMIN_TOKEN)
+      .type('form')
+      .send({ resolvedUrl: 'not a url' });
+    assert.equal(res.status, 302);
+
+    const row = db.prepare('SELECT status FROM review_items WHERE id = ?').get(reviewItem.id);
+    assert.equal(row.status, 'OPEN');
+
+    const reviewPage = await request(app).get(res.headers.location).set('x-admin-token', ADMIN_TOKEN);
+    assert.match(reviewPage.text, /doesn't look like a LinkedIn URL/);
+  } finally {
+    close();
+  }
+});
+
+test('POST /review/short/:id/undo reverses a dismiss or resolve and reopens the item', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    const result = ingest(db, SHORT_LINK_TEXT, GROUP);
+    await result.shortLinkResolutionsSettled;
+    const reviewItem = db.prepare("SELECT id FROM review_items WHERE kind = 'UNRESOLVED_SHORT_LINK'").get();
+
+    await request(app).post(`/review/short/${reviewItem.id}/dismiss`).set('x-admin-token', ADMIN_TOKEN);
+
+    const undoRes = await request(app)
+      .post(`/review/short/${reviewItem.id}/undo`)
+      .set('x-admin-token', ADMIN_TOKEN);
+    assert.equal(undoRes.status, 302);
+    assert.equal(undoRes.headers.location, '/review');
+
+    const row = db.prepare('SELECT status FROM review_items WHERE id = ?').get(reviewItem.id);
+    assert.equal(row.status, 'OPEN');
+
+    const reviewPage = await request(app).get('/review').set('x-admin-token', ADMIN_TOKEN);
+    assert.match(reviewPage.text, /lnkd\.in\/abc123/);
   } finally {
     close();
   }

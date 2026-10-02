@@ -1,10 +1,12 @@
 // LinkedIn URL extraction, classification, and canonicalization.
 //
 // Ticket #2 shipped POST-shaped extraction/canonicalization only. Ticket #5
-// adds classification of every other LinkedIn URL (profile/company/jobs/etc)
+// added classification of every other LinkedIn URL (profile/company/jobs/etc)
 // as OTHER_LINKEDIN, per the spec's "deterministic classification" decision.
-// lnkd.in short-link resolution (UNRESOLVED_SHORT_LINK) remains out of scope
-// for both tickets -- it is spec'd but not yet implemented.
+// Ticket #6 adds `lnkd.in` short links as a fourth classification
+// ('SHORT_LINK'): extracted alongside real linkedin.com URLs, but resolution
+// (the HTTP redirect lookup) is the ingestion pipeline's concern, not this
+// module's -- this module only recognizes the shape.
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
 
 const POST_PATH_RES = [
@@ -23,8 +25,8 @@ export function extractPostUrls(text) {
 }
 
 /**
- * Finds every LinkedIn URL in free text, of any shape (post or otherwise).
- * lnkd.in short links are not linkedin.com and are not matched here.
+ * Finds every LinkedIn URL in free text, of any shape (post, other, or an
+ * unresolved `lnkd.in` short link).
  * @param {string} text
  * @returns {string[]} raw URLs, in order, duplicates included
  */
@@ -32,17 +34,20 @@ export function extractLinkedInUrls(text) {
   const matches = text.match(URL_RE) ?? [];
   return matches
     .map((raw) => raw.replace(/[.,;!?]+$/, '')) // trailing sentence punctuation
-    .filter(isLinkedInUrl);
+    .filter((raw) => isLinkedInUrl(raw) || isShortLinkUrl(raw));
 }
 
 /**
- * Classifies a LinkedIn URL per the spec's deterministic rules.
+ * Classifies a LinkedIn (or `lnkd.in`) URL per the spec's deterministic rules.
  * @param {string} raw
- * @returns {'POST'|'OTHER_LINKEDIN'|null} null if not a linkedin.com URL at all
+ * @returns {'POST'|'OTHER_LINKEDIN'|'SHORT_LINK'|null} null if neither a
+ *   linkedin.com nor an lnkd.in URL at all
  */
 export function classifyLinkedInUrl(raw) {
   const url = tryParseUrl(raw);
-  if (!url || !isLinkedInUrl(raw)) return null;
+  if (!url) return null;
+  if (isShortLinkUrl(raw)) return 'SHORT_LINK';
+  if (!isLinkedInUrl(raw)) return null;
   return POST_PATH_RES.some((re) => re.test(url.pathname)) ? 'POST' : 'OTHER_LINKEDIN';
 }
 
@@ -50,6 +55,12 @@ function isLinkedInUrl(raw) {
   const url = tryParseUrl(raw);
   if (!url) return false;
   return /(^|\.)linkedin\.com$/i.test(url.hostname);
+}
+
+function isShortLinkUrl(raw) {
+  const url = tryParseUrl(raw);
+  if (!url) return false;
+  return /(^|\.)lnkd\.in$/i.test(url.hostname);
 }
 
 function isLinkedInPostUrl(raw) {

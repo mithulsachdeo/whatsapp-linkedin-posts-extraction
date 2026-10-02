@@ -6,13 +6,18 @@
 import { esc } from './layout.js';
 
 /**
- * @param {{ items: Array<object>, members: Array<object>, otherLinkedInItems: Array<object> }} data
+ * @param {{ items: Array<object>, members: Array<object>, otherLinkedInItems: Array<object>, shortLinkItems: Array<object> }} data
  * @param {{
  *   toast?: { rawSender: string, memberName: string, createdMemberId: number|null } | null,
  *   otherLinkedInToast?: { action: 'dismissed'|'promoted', id: number, url: string } | null,
+ *   shortLinkToast?: { action: 'dismissed'|'resolved', id: number, url: string } | null,
+ *   shortLinkError?: { id: number } | null,
  * }} [params]
  */
-export function renderReviewPage({ items, members, otherLinkedInItems = [] }, { toast, otherLinkedInToast } = {}) {
+export function renderReviewPage(
+  { items, members, otherLinkedInItems = [], shortLinkItems = [] },
+  { toast, otherLinkedInToast, shortLinkToast, shortLinkError } = {}
+) {
   return `
     <h1 style="font-size:36px;margin-bottom:var(--space-2)">Review queue</h1>
     <h2 style="font-size:20px;font-weight:600;color:var(--color-neutral-700);margin:0 0 var(--space-2)">Pending attribution</h2>
@@ -24,6 +29,11 @@ export function renderReviewPage({ items, members, otherLinkedInItems = [] }, { 
     <p style="color:var(--color-neutral-700);max-width:58ch">Profile, company, and job links the classifier flagged as not a post. They are never shown on the board. Dismiss to confirm, or promote if the classifier got it wrong.</p>
     ${otherLinkedInToast ? renderOtherLinkedInToast(otherLinkedInToast) : ''}
     ${otherLinkedInItems.length === 0 ? renderOtherLinkedInEmpty() : renderOtherLinkedInItems(otherLinkedInItems)}
+
+    <h2 style="font-size:20px;font-weight:600;color:var(--color-neutral-700);margin:var(--space-8) 0 var(--space-2)">Unresolved short links</h2>
+    <p style="color:var(--color-neutral-700);max-width:58ch">lnkd.in links that failed to resolve at import. Paste the real LinkedIn URL to recover one, or dismiss it.</p>
+    ${shortLinkToast ? renderShortLinkToast(shortLinkToast) : ''}
+    ${shortLinkItems.length === 0 ? renderShortLinkEmpty() : renderShortLinkItems(shortLinkItems, shortLinkError)}
   `;
 }
 
@@ -128,6 +138,54 @@ function renderOtherLinkedInToast({ action, id, url }) {
     <div role="status" data-testid="other-linkedin-toast" style="display:flex;gap:var(--space-3);align-items:center;background:var(--color-neutral-900);color:var(--color-neutral-100);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-3) var(--space-3) var(--space-4);margin-top:var(--space-4);font-size:14px">
       <span style="flex:1">${message}</span>
       <form method="post" action="/review/other/${id}/undo" style="margin:0">
+        <button type="submit" class="btn" style="color:var(--color-accent-300)">Undo</button>
+      </form>
+    </div>`;
+}
+
+function renderShortLinkItems(items, shortLinkError) {
+  const cards = items
+    .map((item) => {
+      const showError = shortLinkError?.id === item.id;
+      return `
+      <div class="card" data-testid="short-link-item" style="padding:var(--space-4) var(--space-6);gap:var(--space-3)">
+        <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
+          <span class="tag tag-accent-2">Unresolved</span>
+          <div style="flex:1 1 260px;min-width:0">
+            <div style="font-weight:700;font-size:15px;word-break:break-all">${esc(item.url)}</div>
+            <div style="font-size:13px;color:var(--color-neutral-700)">Shared by ${esc(item.rawSender)}</div>
+          </div>
+        </div>
+        ${showError ? '<p role="alert" style="margin:0;color:var(--color-danger-700,#b42318);font-size:13px">That doesn\'t look like a LinkedIn URL. Paste the full resolved link.</p>' : ''}
+        <form method="post" action="/review/short/${item.id}/resolve" style="display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center">
+          <input class="input" type="url" name="resolvedUrl" placeholder="https://www.linkedin.com/posts/..." aria-label="Resolved URL for ${esc(item.url)}" style="flex:1 1 280px" />
+          <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+        <form method="post" action="/review/short/${item.id}/dismiss" style="margin:0">
+          <button type="submit" class="btn btn-secondary">Dismiss</button>
+        </form>
+      </div>`;
+    })
+    .join('');
+
+  return `<div style="display:flex;flex-direction:column;gap:var(--space-4);margin-top:var(--space-6)">${cards}</div>`;
+}
+
+function renderShortLinkEmpty() {
+  return `
+    <div data-testid="short-link-empty" style="display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);padding:var(--space-8) 0">
+      <span style="width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);margin-bottom:var(--space-2)">&#10003;</span>
+      <h3 style="margin:0">No unresolved short links</h3>
+      <p style="margin:0;color:var(--color-neutral-700);max-width:50ch">lnkd.in links that fail to resolve from future imports will appear here.</p>
+    </div>`;
+}
+
+function renderShortLinkToast({ action, id, url }) {
+  const message = action === 'resolved' ? `${esc(url)} resolved and added to the board.` : `${esc(url)} dismissed.`;
+  return `
+    <div role="status" data-testid="short-link-toast" style="display:flex;gap:var(--space-3);align-items:center;background:var(--color-neutral-900);color:var(--color-neutral-100);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-3) var(--space-3) var(--space-4);margin-top:var(--space-4);font-size:14px">
+      <span style="flex:1">${message}</span>
+      <form method="post" action="/review/short/${id}/undo" style="margin:0">
         <button type="submit" class="btn" style="color:var(--color-accent-300)">Undo</button>
       </form>
     </div>`;
