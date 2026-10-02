@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDashboard } from '../query/dashboard.js';
-import { getUnknownSenderReviewItems, getMembers } from '../query/review.js';
+import { getUnknownSenderReviewItems, getOtherLinkedInReviewItems, getMembers } from '../query/review.js';
 import { layout } from '../views/layout.js';
 import { renderDashboard } from '../views/dashboard.js';
 import { renderImportPage } from '../views/import.js';
@@ -14,6 +14,11 @@ import { ingest } from '../ingest/ingest.js';
 import { GROUPS } from '../ingest/groups.js';
 import { setPreviewOverride } from '../preview/previewCache.js';
 import { mapAliasToMember, createMemberAndMapAlias, undoAliasMapping } from '../identity/aliases.js';
+import {
+  dismissOtherLinkedInItem,
+  promoteOtherLinkedInItem,
+  undoOtherLinkedInAction,
+} from '../review/otherLinkedIn.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INDUSTRY_DIR = path.join(__dirname, '..', '..', 'Industry');
@@ -97,15 +102,17 @@ export function createApp(db, options = {}) {
   app.get('/review', requireAdmin, (req, res) => {
     const data = getDashboard(db);
     const items = getUnknownSenderReviewItems(db);
+    const otherLinkedInItems = getOtherLinkedInReviewItems(db);
     const members = getMembers(db);
     const toast = buildToastFromQuery(req.query);
+    const otherLinkedInToast = buildOtherLinkedInToastFromQuery(req.query);
     res.send(
       layout({
         title: 'Review',
         active: 'review',
         isAdmin: req.isAdmin,
         lastUpdated: data.lastUpdated,
-        body: renderReviewPage({ items, members }, { toast }),
+        body: renderReviewPage({ items, members, otherLinkedInItems }, { toast, otherLinkedInToast }),
       })
     );
   });
@@ -163,6 +170,34 @@ export function createApp(db, options = {}) {
     res.redirect('/review');
   });
 
+  // Review actions (spec): dismiss confirms a non-post LinkedIn link is not
+  // a post; promote reclassifies it as one, flowing into dedup/attribution
+  // (src/review/otherLinkedIn.js). Both reversible via the shared undo route.
+  app.post('/review/other/:id/dismiss', requireAdmin, (req, res) => {
+    const id = Number(req.params.id);
+    const item = getOtherLinkedInReviewItems(db).find((i) => i.id === id);
+    if (!item || !dismissOtherLinkedInItem(db, id)) {
+      res.redirect('/review');
+      return;
+    }
+    res.redirect(`/review?${buildOtherLinkedInRedirectParams('dismissed', item)}`);
+  });
+
+  app.post('/review/other/:id/promote', requireAdmin, (req, res) => {
+    const id = Number(req.params.id);
+    const item = getOtherLinkedInReviewItems(db).find((i) => i.id === id);
+    if (!item || !promoteOtherLinkedInItem(db, id)) {
+      res.redirect('/review');
+      return;
+    }
+    res.redirect(`/review?${buildOtherLinkedInRedirectParams('promoted', item)}`);
+  });
+
+  app.post('/review/other/:id/undo', requireAdmin, (req, res) => {
+    undoOtherLinkedInAction(db, Number(req.params.id));
+    res.redirect('/review');
+  });
+
   // Admin action (spec): manually set/edit a post's preview. Overrides
   // whatever was fetched (or not) and is never overwritten by a later fetch
   // -- see src/preview/previewCache.js's preview_edited guard.
@@ -186,5 +221,18 @@ function buildToastFromQuery(query) {
     rawSender: String(query.rawSender),
     memberName: String(query.memberName),
     createdMemberId: query.createdMemberId ? Number(query.createdMemberId) : null,
+  };
+}
+
+function buildOtherLinkedInRedirectParams(action, item) {
+  return new URLSearchParams({ otherAction: action, otherId: String(item.id), otherUrl: item.url }).toString();
+}
+
+function buildOtherLinkedInToastFromQuery(query) {
+  if (!['dismissed', 'promoted'].includes(query.otherAction) || !query.otherId || !query.otherUrl) return null;
+  return {
+    action: query.otherAction,
+    id: Number(query.otherId),
+    url: String(query.otherUrl),
   };
 }

@@ -226,18 +226,63 @@ test('a raw sender matching a known alias auto-links to its member on import', (
   }
 });
 
-test('non-LinkedIn and non-post URLs are not extracted', () => {
+test('non-LinkedIn URLs are not extracted at all', () => {
   const { db, close } = createTestDb();
   try {
-    const text = [
-      '30/09/26, 10:15 - Priya Sharma: check this https://example.com/foo',
-      '30/09/26, 10:16 - Priya Sharma: https://www.linkedin.com/in/priya-sharma',
-    ].join('\n');
+    const text = '30/09/26, 10:15 - Priya Sharma: check this https://example.com/foo';
 
     const result = ingest(db, text, GROUP);
 
     assert.equal(result.linksFound, 0);
     assert.equal(result.newPosts, 0);
+  } finally {
+    close();
+  }
+});
+
+test('a LinkedIn profile/company/jobs URL is not a post but is captured as an OTHER_LINKEDIN review item', () => {
+  const { db, close } = createTestDb();
+  try {
+    const text = [
+      '30/09/26, 10:15 - Priya Sharma: https://www.linkedin.com/in/priya-sharma',
+      '30/09/26, 10:16 - Priya Sharma: https://www.linkedin.com/company/acme',
+      '30/09/26, 10:17 - Priya Sharma: https://www.linkedin.com/jobs/view/12345',
+    ].join('\n');
+
+    const result = ingest(db, text, GROUP);
+
+    assert.equal(result.linksFound, 3);
+    assert.equal(result.newPosts, 0);
+
+    const dashboard = getDashboard(db);
+    assert.equal(dashboard.posts.length, 0);
+
+    const items = db.prepare("SELECT * FROM review_items WHERE kind = 'OTHER_LINKEDIN'").all();
+    assert.equal(items.length, 3);
+    assert.ok(items.every((i) => i.status === 'OPEN'));
+    assert.deepEqual(
+      items.map((i) => JSON.parse(i.payload).url).sort(),
+      [
+        'https://www.linkedin.com/company/acme',
+        'https://www.linkedin.com/in/priya-sharma',
+        'https://www.linkedin.com/jobs/view/12345',
+      ]
+    );
+  } finally {
+    close();
+  }
+});
+
+test('re-importing the same export produces no duplicate OTHER_LINKEDIN review items', () => {
+  const { db, close } = createTestDb();
+  try {
+    const text = '30/09/26, 10:15 - Priya Sharma: https://www.linkedin.com/in/priya-sharma';
+
+    ingest(db, text, GROUP);
+    ingest(db, text, GROUP);
+
+    const items = db.prepare("SELECT * FROM review_items WHERE kind = 'OTHER_LINKEDIN'").all();
+    assert.equal(items.length, 1);
   } finally {
     close();
   }

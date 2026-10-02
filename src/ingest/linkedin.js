@@ -1,11 +1,10 @@
-// LinkedIn POST URL extraction and canonicalization.
+// LinkedIn URL extraction, classification, and canonicalization.
 //
-// Scope note (ticket #2): only the three POST-shaped URL forms the ticket
-// names are extracted and persisted as Posts. Non-post LinkedIn links
-// (profiles/company/jobs -> OTHER_LINKEDIN) and lnkd.in short-link
-// resolution are spec'd (review-queue section) but out of this ticket's
-// scope -- they are silently ignored here rather than guessed at. Follow-up:
-// a future review-queue ticket should route those to review_items instead.
+// Ticket #2 shipped POST-shaped extraction/canonicalization only. Ticket #5
+// adds classification of every other LinkedIn URL (profile/company/jobs/etc)
+// as OTHER_LINKEDIN, per the spec's "deterministic classification" decision.
+// lnkd.in short-link resolution (UNRESOLVED_SHORT_LINK) remains out of scope
+// for both tickets -- it is spec'd but not yet implemented.
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
 
 const POST_PATH_RES = [
@@ -20,17 +19,41 @@ const POST_PATH_RES = [
  * @returns {string[]} raw URLs, in order, duplicates included
  */
 export function extractPostUrls(text) {
+  return extractLinkedInUrls(text).filter((raw) => classifyLinkedInUrl(raw) === 'POST');
+}
+
+/**
+ * Finds every LinkedIn URL in free text, of any shape (post or otherwise).
+ * lnkd.in short links are not linkedin.com and are not matched here.
+ * @param {string} text
+ * @returns {string[]} raw URLs, in order, duplicates included
+ */
+export function extractLinkedInUrls(text) {
   const matches = text.match(URL_RE) ?? [];
   return matches
     .map((raw) => raw.replace(/[.,;!?]+$/, '')) // trailing sentence punctuation
-    .filter(isLinkedInPostUrl);
+    .filter(isLinkedInUrl);
+}
+
+/**
+ * Classifies a LinkedIn URL per the spec's deterministic rules.
+ * @param {string} raw
+ * @returns {'POST'|'OTHER_LINKEDIN'|null} null if not a linkedin.com URL at all
+ */
+export function classifyLinkedInUrl(raw) {
+  const url = tryParseUrl(raw);
+  if (!url || !isLinkedInUrl(raw)) return null;
+  return POST_PATH_RES.some((re) => re.test(url.pathname)) ? 'POST' : 'OTHER_LINKEDIN';
+}
+
+function isLinkedInUrl(raw) {
+  const url = tryParseUrl(raw);
+  if (!url) return false;
+  return /(^|\.)linkedin\.com$/i.test(url.hostname);
 }
 
 function isLinkedInPostUrl(raw) {
-  const url = tryParseUrl(raw);
-  if (!url) return false;
-  if (!/(^|\.)linkedin\.com$/i.test(url.hostname)) return false;
-  return POST_PATH_RES.some((re) => re.test(url.pathname));
+  return classifyLinkedInUrl(raw) === 'POST';
 }
 
 /**
@@ -41,8 +64,22 @@ function isLinkedInPostUrl(raw) {
  * @returns {string|null} canonical URL, or null if not a recognizable post URL
  */
 export function canonicalizeUrl(raw) {
+  if (!isLinkedInPostUrl(raw)) return null;
+  return canonicalizeAnyLinkedInUrl(raw);
+}
+
+/**
+ * Normalizes any linkedin.com URL (post-shaped or not) the same way
+ * `canonicalizeUrl` does, without requiring it to be post-shaped. Used when
+ * an admin promotes an OTHER_LINKEDIN review item to a post (the spec gives
+ * the admin final say over the classifier), and when storing an
+ * OTHER_LINKEDIN item's URL so it dedupes/displays consistently.
+ * @param {string} raw
+ * @returns {string|null} canonical URL, or null if not a linkedin.com URL
+ */
+export function canonicalizeAnyLinkedInUrl(raw) {
   const url = tryParseUrl(raw);
-  if (!url || !isLinkedInPostUrl(raw)) return null;
+  if (!url || !isLinkedInUrl(raw)) return null;
 
   let pathname = url.pathname.replace(/\/+$/, '');
   if (!pathname.startsWith('/')) pathname = '/' + pathname;

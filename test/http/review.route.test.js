@@ -11,6 +11,7 @@ const ADMIN_TOKEN = 'test-admin-token';
 const GROUP = 'group-a';
 const RAW_SENDER = '+91 90000 00000';
 const TEXT = `30/09/26, 10:15 - ${RAW_SENDER}: https://www.linkedin.com/posts/someone_activity-1-abcd`;
+const OTHER_LINKEDIN_TEXT = `30/09/26, 10:15 - ${RAW_SENDER}: https://www.linkedin.com/in/priya-sharma`;
 
 function buildApp() {
   const { db, close } = createTestDb();
@@ -170,6 +171,101 @@ test('POST /review/undo for a newly-created member removes that member too', asy
 
     const member = db.prepare('SELECT * FROM members WHERE display_name = ?').get('Arjun Das');
     assert.equal(member, undefined);
+  } finally {
+    close();
+  }
+});
+
+test('GET /review lists a non-post LinkedIn link under "Non-post LinkedIn links"', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    ingest(db, OTHER_LINKEDIN_TEXT, GROUP);
+
+    const res = await request(app).get('/review').set('x-admin-token', ADMIN_TOKEN);
+    assert.equal(res.status, 200);
+    assert.match(res.text, /https:\/\/www\.linkedin\.com\/in\/priya-sharma/);
+    assert.match(res.text, /Non-post LinkedIn links/);
+  } finally {
+    close();
+  }
+});
+
+test('POST /review/other/:id/dismiss is forbidden without the admin token', async () => {
+  const { app, close } = buildApp();
+  try {
+    const res = await request(app).post('/review/other/1/dismiss');
+    assert.equal(res.status, 403);
+  } finally {
+    close();
+  }
+});
+
+test('POST /review/other/:id/dismiss confirms the link is not a post and shows an undoable toast', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    ingest(db, OTHER_LINKEDIN_TEXT, GROUP);
+    const reviewItem = db.prepare("SELECT id FROM review_items WHERE kind = 'OTHER_LINKEDIN'").get();
+
+    const res = await request(app)
+      .post(`/review/other/${reviewItem.id}/dismiss`)
+      .set('x-admin-token', ADMIN_TOKEN);
+    assert.equal(res.status, 302);
+    assert.match(res.headers.location, /^\/review\?/);
+
+    const row = db.prepare('SELECT status FROM review_items WHERE id = ?').get(reviewItem.id);
+    assert.equal(row.status, 'DISMISSED');
+
+    const reviewPage = await request(app).get(res.headers.location).set('x-admin-token', ADMIN_TOKEN);
+    assert.match(reviewPage.text, /dismissed as not a post/);
+    assert.match(reviewPage.text, /No non-post links to review/);
+  } finally {
+    close();
+  }
+});
+
+test('POST /review/other/:id/promote reclassifies the link as a post on the dashboard', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    ingest(db, OTHER_LINKEDIN_TEXT, GROUP);
+    const reviewItem = db.prepare("SELECT id FROM review_items WHERE kind = 'OTHER_LINKEDIN'").get();
+
+    const res = await request(app)
+      .post(`/review/other/${reviewItem.id}/promote`)
+      .set('x-admin-token', ADMIN_TOKEN);
+    assert.equal(res.status, 302);
+
+    const row = db.prepare('SELECT status FROM review_items WHERE id = ?').get(reviewItem.id);
+    assert.equal(row.status, 'RESOLVED');
+
+    const dashboard = await request(app).get('/');
+    assert.match(dashboard.text, /priya-sharma/);
+
+    const toastPage = await request(app).get(res.headers.location).set('x-admin-token', ADMIN_TOKEN);
+    assert.match(toastPage.text, /is now on the board as a post/);
+  } finally {
+    close();
+  }
+});
+
+test('POST /review/other/:id/undo reverses a dismiss or promote and reopens the item', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    ingest(db, OTHER_LINKEDIN_TEXT, GROUP);
+    const reviewItem = db.prepare("SELECT id FROM review_items WHERE kind = 'OTHER_LINKEDIN'").get();
+
+    await request(app).post(`/review/other/${reviewItem.id}/dismiss`).set('x-admin-token', ADMIN_TOKEN);
+
+    const undoRes = await request(app)
+      .post(`/review/other/${reviewItem.id}/undo`)
+      .set('x-admin-token', ADMIN_TOKEN);
+    assert.equal(undoRes.status, 302);
+    assert.equal(undoRes.headers.location, '/review');
+
+    const row = db.prepare('SELECT status FROM review_items WHERE id = ?').get(reviewItem.id);
+    assert.equal(row.status, 'OPEN');
+
+    const reviewPage = await request(app).get('/review').set('x-admin-token', ADMIN_TOKEN);
+    assert.match(reviewPage.text, /priya-sharma/);
   } finally {
     close();
   }

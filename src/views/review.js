@@ -6,16 +6,24 @@
 import { esc } from './layout.js';
 
 /**
- * @param {{ items: Array<object>, members: Array<object> }} data
- * @param {{ toast?: { rawSender: string, memberName: string, createdMemberId: number|null } | null }} [params]
+ * @param {{ items: Array<object>, members: Array<object>, otherLinkedInItems: Array<object> }} data
+ * @param {{
+ *   toast?: { rawSender: string, memberName: string, createdMemberId: number|null } | null,
+ *   otherLinkedInToast?: { action: 'dismissed'|'promoted', id: number, url: string } | null,
+ * }} [params]
  */
-export function renderReviewPage({ items, members }, { toast } = {}) {
+export function renderReviewPage({ items, members, otherLinkedInItems = [] }, { toast, otherLinkedInToast } = {}) {
   return `
     <h1 style="font-size:36px;margin-bottom:var(--space-2)">Review queue</h1>
     <h2 style="font-size:20px;font-weight:600;color:var(--color-neutral-700);margin:0 0 var(--space-2)">Pending attribution</h2>
     <p style="color:var(--color-neutral-700);max-width:58ch">These senders appear in a chat export but don't match anyone on the member list. Their shares already count on the board and show the raw sender name until you match them.</p>
     ${toast ? renderToast(toast) : ''}
     ${items.length === 0 ? renderEmpty() : renderItems(items, members)}
+
+    <h2 style="font-size:20px;font-weight:600;color:var(--color-neutral-700);margin:var(--space-8) 0 var(--space-2)">Non-post LinkedIn links</h2>
+    <p style="color:var(--color-neutral-700);max-width:58ch">Profile, company, and job links the classifier flagged as not a post. They are never shown on the board. Dismiss to confirm, or promote if the classifier got it wrong.</p>
+    ${otherLinkedInToast ? renderOtherLinkedInToast(otherLinkedInToast) : ''}
+    ${otherLinkedInItems.length === 0 ? renderOtherLinkedInEmpty() : renderOtherLinkedInItems(otherLinkedInItems)}
   `;
 }
 
@@ -70,6 +78,56 @@ function renderToast({ rawSender, memberName, createdMemberId }) {
       <form method="post" action="/review/undo" style="margin:0">
         <input type="hidden" name="rawSender" value="${esc(rawSender)}" />
         ${createdMemberId ? `<input type="hidden" name="createdMemberId" value="${esc(createdMemberId)}" />` : ''}
+        <button type="submit" class="btn" style="color:var(--color-accent-300)">Undo</button>
+      </form>
+    </div>`;
+}
+
+function renderOtherLinkedInItems(items) {
+  const cards = items
+    .map(
+      (item) => `
+      <div class="card" data-testid="other-linkedin-item" style="padding:var(--space-4) var(--space-6);gap:var(--space-3)">
+        <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
+          <span class="tag tag-accent-2">Not a post</span>
+          <div style="flex:1 1 260px;min-width:0">
+            <div style="font-weight:700;font-size:15px;word-break:break-all">${esc(item.url)}</div>
+            <div style="font-size:13px;color:var(--color-neutral-700)">Shared by ${esc(item.rawSender)}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+          <form method="post" action="/review/other/${item.id}/dismiss" style="margin:0">
+            <button type="submit" class="btn btn-secondary">Dismiss</button>
+          </form>
+          <form method="post" action="/review/other/${item.id}/promote" style="margin:0">
+            <button type="submit" class="btn btn-primary">Promote to post</button>
+          </form>
+        </div>
+      </div>`
+    )
+    .join('');
+
+  return `<div style="display:flex;flex-direction:column;gap:var(--space-4);margin-top:var(--space-6)">${cards}</div>`;
+}
+
+function renderOtherLinkedInEmpty() {
+  return `
+    <div data-testid="other-linkedin-empty" style="display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);padding:var(--space-8) 0">
+      <span style="width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);margin-bottom:var(--space-2)">&#10003;</span>
+      <h3 style="margin:0">No non-post links to review</h3>
+      <p style="margin:0;color:var(--color-neutral-700);max-width:50ch">Profile, company, and job links from future imports will appear here.</p>
+    </div>`;
+}
+
+function renderOtherLinkedInToast({ action, id, url }) {
+  const message =
+    action === 'promoted'
+      ? `${esc(url)} is now on the board as a post.`
+      : `${esc(url)} dismissed as not a post.`;
+  return `
+    <div role="status" data-testid="other-linkedin-toast" style="display:flex;gap:var(--space-3);align-items:center;background:var(--color-neutral-900);color:var(--color-neutral-100);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-3) var(--space-3) var(--space-4);margin-top:var(--space-4);font-size:14px">
+      <span style="flex:1">${message}</span>
+      <form method="post" action="/review/other/${id}/undo" style="margin:0">
         <button type="submit" class="btn" style="color:var(--color-accent-300)">Undo</button>
       </form>
     </div>`;

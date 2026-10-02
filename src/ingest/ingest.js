@@ -5,7 +5,7 @@
 // has turned an upload into decoded text.
 import { createHash } from 'node:crypto';
 import { parseMessages } from './parseChat.js';
-import { extractPostUrls, canonicalizeUrl } from './linkedin.js';
+import { extractLinkedInUrls, classifyLinkedInUrl, canonicalizeUrl, canonicalizeAnyLinkedInUrl } from './linkedin.js';
 import { NullPreviewFetcher } from '../preview/previewFetcher.js';
 import { cacheFetchedPreview, markPreviewUnavailable } from '../preview/previewCache.js';
 
@@ -49,11 +49,27 @@ export function ingest(db, rawExportText, groupId, options = {}) {
   db.exec('BEGIN');
   try {
     for (const message of messages) {
-      const urls = extractPostUrls(message.text);
+      const urls = extractLinkedInUrls(message.text);
       for (const rawUrl of urls) {
-        linksFound++;
+        const kind = classifyLinkedInUrl(rawUrl);
+        if (kind === 'OTHER_LINKEDIN') {
+          linksFound++;
+          // Non-post LinkedIn link (profile/company/jobs/etc, spec): captured
+          // for review, never silently discarded, never shown as a post. No
+          // sharing event yet -- promoting the review item creates one.
+          ensureOtherLinkedInReviewItem(db, {
+            url: canonicalizeAnyLinkedInUrl(rawUrl) ?? rawUrl,
+            rawSender: message.rawSender,
+            timestamp: message.timestamp,
+            groupId,
+            note: message.text.trim() || null,
+          });
+          continue;
+        }
+
         const canonicalUrl = canonicalizeUrl(rawUrl);
-        if (!canonicalUrl) continue; // defensive; extractPostUrls already filtered
+        if (!canonicalUrl) continue; // defensive; classifyLinkedInUrl already filtered to POST
+        linksFound++;
 
         const { id: postId, isNew } = upsertPost(db, canonicalUrl);
         if (isNew) {
@@ -132,7 +148,12 @@ export function ingest(db, rawExportText, groupId, options = {}) {
   }
 }
 
-function upsertPost(db, canonicalUrl) {
+// Exported (alongside resolveMember/ensureUnknownSenderReviewItem/
+// insertSharingEvent/touchPostTimestamps below) so the OTHER_LINKEDIN
+// review workflow's "promote to post" action (src/review/otherLinkedIn.js)
+// can reuse the exact same upsert/attribution path ingestion uses, rather
+// than duplicating it.
+export function upsertPost(db, canonicalUrl) {
   const existing = db.prepare('SELECT id FROM posts WHERE canonical_url = ?').get(canonicalUrl);
   if (existing) return { id: existing.id, isNew: false };
 
@@ -140,14 +161,14 @@ function upsertPost(db, canonicalUrl) {
   return { id: Number(result.lastInsertRowid), isNew: true };
 }
 
-function resolveMember(db, rawSender) {
+export function resolveMember(db, rawSender) {
   const row = db.prepare('SELECT member_id FROM aliases WHERE raw_value = ?').get(rawSender);
   return row ? row.member_id : null;
 }
 
 // No fuzzy auto-merge (spec: "an unrecognized sender links to no member").
 // One OPEN review item per unresolved raw sender string, not one per event.
-function ensureUnknownSenderReviewItem(db, rawSender) {
+export function ensureUnknownSenderReviewItem(db, rawSender) {
   const existing = db
     .prepare(
       `SELECT id FROM review_items
@@ -161,10 +182,32 @@ function ensureUnknownSenderReviewItem(db, rawSender) {
   );
 }
 
+// One OTHER_LINKEDIN review item per (group, timestamp, sender, url) --
+// mirrors sharing_events' natural key so re-importing the same or an
+// overlapping export never creates a duplicate review item, regardless of
+// whether a prior one was since dismissed or promoted.
+export function ensureOtherLinkedInReviewItem(db, { url, rawSender, timestamp, groupId, note }) {
+  const existing = db
+    .prepare(
+      `SELECT id FROM review_items
+       WHERE kind = 'OTHER_LINKEDIN'
+         AND json_extract(payload, '$.url') = ?
+         AND json_extract(payload, '$.rawSender') = ?
+         AND json_extract(payload, '$.timestamp') = ?
+         AND json_extract(payload, '$.groupId') = ?`
+    )
+    .get(url, rawSender, timestamp, groupId);
+  if (existing) return;
+
+  db.prepare("INSERT INTO review_items (kind, payload) VALUES ('OTHER_LINKEDIN', ?)").run(
+    JSON.stringify({ url, rawSender, timestamp, groupId, note })
+  );
+}
+
 // Natural key (group_id, message_timestamp, raw_sender, post_id) is a DB
 // UNIQUE constraint; INSERT OR IGNORE makes re-importing the same or an
 // overlapping export a zero-new-rows no-op.
-function insertSharingEvent(db, { postId, groupId, rawSender, memberId, timestamp, note }) {
+export function insertSharingEvent(db, { postId, groupId, rawSender, memberId, timestamp, note }) {
   const result = db
     .prepare(
       `INSERT OR IGNORE INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp, note)
@@ -174,7 +217,7 @@ function insertSharingEvent(db, { postId, groupId, rawSender, memberId, timestam
   return result.changes > 0;
 }
 
-function touchPostTimestamps(db, postId, timestamp) {
+export function touchPostTimestamps(db, postId, timestamp) {
   db.prepare(
     `UPDATE posts SET
        first_shared_at = CASE WHEN first_shared_at IS NULL OR ? < first_shared_at THEN ? ELSE first_shared_at END,
