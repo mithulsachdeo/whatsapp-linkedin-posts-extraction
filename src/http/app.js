@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDashboard } from '../query/dashboard.js';
+import { getDashboard, getMemberFilterOptions } from '../query/dashboard.js';
 import {
   getUnknownSenderReviewItems,
   getOtherLinkedInReviewItems,
@@ -53,9 +53,33 @@ export function createApp(db, options = {}) {
   app.use('/assets', express.static(INDUSTRY_DIR));
 
   app.get('/', (req, res) => {
-    const data = getDashboard(db);
     const density = req.query.density === 'cards' ? 'cards' : 'rows';
-    const body = renderDashboard(data, { isAdmin: req.isAdmin, density });
+    const sort = req.query.sort === 'most_shared' ? 'most_shared' : 'recent';
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+
+    const queryOptions = { sort };
+    if (search) queryOptions.search = search;
+
+    // Filter-by-member (spec): "pending attribution" is itself a filter
+    // choice alongside filtering to a specific resolved member. An unknown
+    // or stale ?member= value is ignored rather than erroring, falling back
+    // to "Everyone".
+    let activeMember = null;
+    const memberParam = req.query.member;
+    if (memberParam === 'pending') {
+      queryOptions.pending = true;
+      activeMember = { type: 'pending' };
+    } else if (memberParam) {
+      const member = getMembers(db).find((m) => m.id === Number(memberParam));
+      if (member) {
+        queryOptions.memberId = member.id;
+        activeMember = { type: 'member', id: member.id, displayName: member.displayName };
+      }
+    }
+
+    const data = getDashboard(db, queryOptions);
+    const filterOptions = getMemberFilterOptions(db);
+    const body = renderDashboard(data, { isAdmin: req.isAdmin, density, sort, search, activeMember, filterOptions });
     res.send(
       layout({ title: 'Posts', active: 'posts', isAdmin: req.isAdmin, lastUpdated: data.lastUpdated, body })
     );

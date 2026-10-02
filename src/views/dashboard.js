@@ -2,36 +2,239 @@ import { esc } from './layout.js';
 
 /**
  * Renders the dashboard body: the "No posts yet" empty state (adapted from
- * Industry/components/postboard-empty-states.html) when there are no posts,
- * otherwise the post list in rows or cards density (adapted from
- * Industry/components/postboard-post-row.html). Sort/filter/search controls
- * are out of scope for this ticket and land with a later dashboard-controls
- * ticket; default sort (most-recent-first) comes from the query layer.
- * Group is never shown, per the finalized group-hidden decision.
+ * Industry/components/postboard-empty-states.html) when the whole board has
+ * no data at all; otherwise the discovery controls (search, sort, density,
+ * filter-by-member) from Industry/templates/postboard/ plus the post list in
+ * rows or cards density (adapted from Industry/components/postboard-post-row.html
+ * and postboard-member-filter.html). Group is never shown, per the finalized
+ * group-hidden decision.
  * @param {{ posts: Array<object> }} data
- * @param {{ isAdmin: boolean, density: 'rows'|'cards' }} params
+ * @param {{
+ *   isAdmin: boolean,
+ *   density?: 'rows'|'cards',
+ *   sort?: 'recent'|'most_shared',
+ *   search?: string,
+ *   activeMember?: { type: 'member', id: number, displayName: string } | { type: 'pending' } | null,
+ *   filterOptions: { totalCount: number, pendingCount: number, members: Array<{ id: number, displayName: string, postCount: number }> },
+ * }} params
  */
-export function renderDashboard({ posts }, { isAdmin, density = 'rows' }) {
-  if (posts.length === 0) {
+export function renderDashboard(
+  { posts },
+  { isAdmin, density = 'rows', sort = 'recent', search = '', activeMember = null, filterOptions }
+) {
+  const hasAnyData = (filterOptions?.totalCount ?? 0) > 0;
+  if (!hasAnyData) {
     return renderEmptyState({ isAdmin });
   }
 
-  const toggle = renderDensityToggle(density);
-  const list = density === 'cards' ? renderCards(posts) : renderRows(posts);
+  const state = { search, sort, density, activeMember };
+  const sidebar = renderMemberSidebar(filterOptions, activeMember, state);
+  const header = renderHeader(activeMember, posts.length);
+  const controls = renderControls(state, filterOptions, activeMember);
+  const results =
+    posts.length === 0 ? renderNoResults(search, activeMember) : renderPostList(posts, density);
 
   return `
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-3)">
-      <h1 style="font-size:40px;margin:0">Every post the groups shared</h1>
-      ${toggle}
+    <style>
+      [data-testid="member-select"] { display: none; }
+      @media (max-width: 760px) {
+        [data-testid="member-sidebar"] { display: none; }
+        [data-testid="member-select"] { display: block; }
+      }
+    </style>
+    <div style="display:flex;flex-wrap:wrap;gap:var(--space-8);align-items:flex-start">
+      ${sidebar}
+      <section style="flex:1 1 480px;min-width:0">
+        ${header}
+        ${controls}
+        ${results}
+      </section>
     </div>
-    ${list}
   `;
 }
 
-function renderDensityToggle(density) {
-  const link = (value, label) =>
-    `<a href="/?density=${value}" aria-current="${density === value ? 'page' : 'false'}" class="btn ${density === value ? 'btn-primary' : 'btn-secondary'}" style="padding:6px 14px;font-size:13px">${label}</a>`;
-  return `<div style="display:flex;gap:var(--space-2)" data-testid="density-toggle">${link('rows', 'Rows')}${link('cards', 'Cards')}</div>`;
+function renderPostList(posts, density) {
+  return density === 'cards' ? renderCards(posts) : renderRows(posts);
+}
+
+// Builds a /?… href carrying forward the current search/sort/density/member
+// state, so switching one control (e.g. sort) never silently drops another
+// (e.g. an in-progress search). `overrides` wins over `state` per key;
+// `overrides.member === ''` explicitly clears the member filter (the
+// "Everyone" / "All posts" link).
+function buildHref(state, overrides = {}) {
+  const merged = { ...state, ...overrides };
+  const params = new URLSearchParams();
+  if (merged.search) params.set('q', merged.search);
+  if (merged.sort && merged.sort !== 'recent') params.set('sort', merged.sort);
+  if (merged.density && merged.density !== 'rows') params.set('density', merged.density);
+
+  const memberParam = 'member' in overrides ? overrides.member : memberParamFor(merged.activeMember);
+  if (memberParam) params.set('member', memberParam);
+
+  const qs = params.toString();
+  return qs ? `/?${qs}` : '/';
+}
+
+function memberParamFor(activeMember) {
+  if (!activeMember) return '';
+  return activeMember.type === 'pending' ? 'pending' : String(activeMember.id);
+}
+
+function renderHeader(activeMember, resultCount) {
+  if (!activeMember) {
+    return `
+      <h1 style="font-size:40px;max-width:18ch;margin-bottom:var(--space-3)">Every post the groups shared</h1>
+    `;
+  }
+
+  const backLink = (state) =>
+    `<a class="btn btn-ghost" href="${buildHref(state, { member: '' })}" style="margin-bottom:var(--space-3);display:inline-flex;align-items:center;gap:6px;text-decoration:none">&larr; All posts</a>`;
+
+  if (activeMember.type === 'pending') {
+    return `
+      ${backLink({ activeMember })}
+      <h1 style="font-size:36px;margin-bottom:var(--space-2)">Pending attribution</h1>
+      <p style="max-width:58ch;color:var(--color-neutral-700);margin:0">Posts with at least one share from a sender who isn't matched to a member yet. They're counted normally; only the name is waiting.</p>
+    `;
+  }
+
+  const postWord = resultCount === 1 ? 'post' : 'posts';
+  return `
+    ${backLink({ activeMember })}
+    <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+      <span style="width:72px;height:72px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-family:var(--font-heading);font-size:26px">${esc(initials(activeMember.displayName))}</span>
+      <div>
+        <h1 style="font-size:36px;margin-bottom:4px" data-testid="member-header-name">${esc(activeMember.displayName)}</h1>
+        <p style="margin:0;color:var(--color-neutral-700)">${resultCount} ${postWord} shared</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderControls(state, filterOptions, activeMember) {
+  const memberSelect = renderMemberSelect(filterOptions, activeMember, state);
+  return `
+    <form method="get" action="/" data-testid="dashboard-controls" style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center;margin:var(--space-6) 0 var(--space-3)">
+      ${memberParamFor(activeMember) ? `<input type="hidden" name="member" value="${esc(memberParamFor(activeMember))}">` : ''}
+      <div style="position:relative;flex:1 1 260px;min-width:0">
+        <svg width="17" height="17" viewBox="0 0 24 24" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);fill:none;stroke:var(--color-neutral-700);stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round;pointer-events:none"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input class="input" type="search" name="q" placeholder="Search posts, authors or members" value="${esc(state.search)}" style="padding-left:40px;min-height:42px;width:100%">
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Sort" data-testid="sort-toggle">
+        <label class="seg-opt"><input type="radio" name="sort" value="recent" onchange="this.form.requestSubmit()" ${state.sort === 'recent' ? 'checked' : ''}>Recent</label>
+        <label class="seg-opt"><input type="radio" name="sort" value="most_shared" onchange="this.form.requestSubmit()" ${state.sort === 'most_shared' ? 'checked' : ''}>Most shared</label>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Density" data-testid="density-toggle">
+        <label class="seg-opt"><input type="radio" name="density" value="rows" onchange="this.form.requestSubmit()" ${state.density === 'rows' ? 'checked' : ''}>Rows</label>
+        <label class="seg-opt"><input type="radio" name="density" value="cards" onchange="this.form.requestSubmit()" ${state.density === 'cards' ? 'checked' : ''}>Cards</label>
+      </div>
+      ${memberSelect}
+      <button type="submit" class="btn btn-secondary" style="padding:6px 14px">Apply</button>
+    </form>
+  `;
+}
+
+function renderMemberSelect(filterOptions, activeMember, state) {
+  const options = [
+    `<option value="" ${!activeMember ? 'selected' : ''}>Everyone (${filterOptions.totalCount})</option>`,
+    ...filterOptions.members.map(
+      (m) =>
+        `<option value="${m.id}" ${activeMember?.type === 'member' && activeMember.id === m.id ? 'selected' : ''}>${esc(m.displayName)} (${m.postCount})</option>`
+    ),
+  ];
+  if (filterOptions.pendingCount > 0) {
+    options.push(
+      `<option value="pending" ${activeMember?.type === 'pending' ? 'selected' : ''}>Pending attribution (${filterOptions.pendingCount})</option>`
+    );
+  }
+  // Narrow-viewport replacement for the sidebar (per the design's member
+  // filter component: "Below 760px the list collapses into a single
+  // select.input"). name="member" on this select deliberately shadows/
+  // replaces the hidden input of the same name the form may also render.
+  return `<select data-testid="member-select" class="input" name="member" onchange="this.form.requestSubmit()" style="min-height:42px;flex:1 1 180px">${options.join('')}</select>`;
+}
+
+function renderMemberSidebar(filterOptions, activeMember, state) {
+  const items = [
+    {
+      href: buildHref(state, { member: '' }),
+      label: 'Everyone',
+      count: filterOptions.totalCount,
+      active: !activeMember,
+      kind: 'everyone',
+    },
+    ...filterOptions.members.map((m) => ({
+      href: buildHref(state, { member: String(m.id) }),
+      label: m.displayName,
+      count: m.postCount,
+      active: activeMember?.type === 'member' && activeMember.id === m.id,
+      kind: 'member',
+    })),
+  ];
+  if (filterOptions.pendingCount > 0) {
+    items.push({
+      href: buildHref(state, { member: 'pending' }),
+      label: 'Pending attribution',
+      count: filterOptions.pendingCount,
+      active: activeMember?.type === 'pending',
+      kind: 'pending',
+    });
+  }
+
+  const rows = items.map(memberFilterRow).join('');
+  return `
+    <aside data-testid="member-sidebar" style="flex:0 0 220px;position:sticky;top:var(--space-6);padding-top:var(--space-2)">
+      <h6 style="color:var(--color-neutral-700);margin-bottom:var(--space-3);font-family:var(--font-body);font-weight:700">Shared by</h6>
+      <div style="display:flex;flex-direction:column;gap:2px">${rows}</div>
+    </aside>
+  `;
+}
+
+function memberFilterRow({ href, label, count, active, kind }) {
+  const activeStyle = active ? 'background:var(--color-accent-200);color:var(--color-accent-900);font-weight:600' : '';
+  return `
+    <a href="${href}" aria-current="${active}" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:10px;padding:5px 12px 5px 5px;border-radius:999px;font-size:14px;${activeStyle}">
+      ${memberAvatar(label, kind)}
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label)}</span>
+      <span style="font-size:12px">${count}</span>
+    </a>`;
+}
+
+function memberAvatar(label, kind) {
+  if (kind === 'pending') {
+    return `<span style="width:26px;height:26px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1.5px dashed var(--color-neutral-600);color:var(--color-neutral-700);font-size:12px;font-weight:700">?</span>`;
+  }
+  if (kind === 'everyone') {
+    return `<span style="width:26px;height:26px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--color-neutral-300);color:var(--color-neutral-800);font-size:10px;font-weight:700">All</span>`;
+  }
+  return `<span style="width:26px;height:26px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-size:10px;font-weight:700">${esc(initials(label))}</span>`;
+}
+
+function initials(name) {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0])
+      .join('')
+      .toUpperCase() || '?'
+  );
+}
+
+function renderNoResults(search, activeMember) {
+  const title = search ? `No posts match “${esc(search)}”` : 'No posts for this filter';
+  return `
+    <div data-testid="no-results" style="padding:var(--space-8) var(--space-4);display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2)">
+      <span style="width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--color-neutral-200);margin-bottom:var(--space-2)">
+        <svg width="24" height="24" viewBox="0 0 24 24" style="fill:none;stroke:var(--color-neutral-700);stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      </span>
+      <h3 style="margin:0">${title}</h3>
+      <p style="margin:0;color:var(--color-neutral-700);max-width:48ch">Try a different word, or clear the member filter.</p>
+      <a class="btn btn-secondary" href="/" data-testid="clear-filters" style="margin-top:var(--space-2);text-decoration:none">Clear search and filters</a>
+    </div>
+  `;
 }
 
 function renderRows(posts) {

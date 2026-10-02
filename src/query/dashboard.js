@@ -5,12 +5,12 @@
 
 const SORTS = {
   recent: 'last_shared_at DESC',
-  most_shared: 'share_count DESC, last_shared_at DESC',
+  most_shared: 'shareCount DESC, last_shared_at DESC',
 };
 
 /**
  * @param {import('node:sqlite').DatabaseSync} db
- * @param {{ sort?: 'recent' | 'most_shared', memberId?: number }} [options]
+ * @param {{ sort?: 'recent' | 'most_shared', memberId?: number, pending?: boolean, search?: string }} [options]
  * @returns {{ posts: Array<object>, lastUpdated: string | null }}
  */
 export function getDashboard(db, options = {}) {
@@ -18,11 +18,30 @@ export function getDashboard(db, options = {}) {
   const orderBy = SORTS[sort];
 
   const params = [];
-  let memberFilter = '';
+  const conditions = [];
+
   if (options.memberId !== undefined) {
-    memberFilter = 'WHERE EXISTS (SELECT 1 FROM sharing_events mse WHERE mse.post_id = p.id AND mse.member_id = ?)';
+    conditions.push('EXISTS (SELECT 1 FROM sharing_events mse WHERE mse.post_id = p.id AND mse.member_id = ?)');
     params.push(options.memberId);
   }
+
+  // Member-filter view option (spec: pending-attribution is itself a filter
+  // choice, alongside filtering to a resolved member) -- posts with at least
+  // one share from a sender not yet mapped to a member.
+  if (options.pending) {
+    conditions.push('EXISTS (SELECT 1 FROM sharing_events pse WHERE pse.post_id = p.id AND pse.member_id IS NULL)');
+  }
+
+  // Text search (spec): over the post URL/slug and any fetched preview text.
+  if (options.search) {
+    const like = `%${options.search}%`;
+    conditions.push(
+      '(p.canonical_url LIKE ? OR p.preview_author LIKE ? OR p.preview_role LIKE ? OR p.preview_excerpt LIKE ?)'
+    );
+    params.push(like, like, like, like);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const rows = db
     .prepare(
@@ -41,7 +60,7 @@ export function getDashboard(db, options = {}) {
         SUM(CASE WHEN se.member_id IS NULL THEN 1 ELSE 0 END) AS pendingShareCount
       FROM posts p
       JOIN sharing_events se ON se.post_id = p.id
-      ${memberFilter}
+      ${whereClause}
       GROUP BY p.id
       ORDER BY ${orderBy}
       `
@@ -75,6 +94,33 @@ export function getDashboard(db, options = {}) {
     })),
     lastUpdated: lastUpdatedRow?.lastUpdated ?? null,
   };
+}
+
+/**
+ * Options for the discovery dashboard's filter-by-member control (sidebar on
+ * wide viewports, a `<select>` on narrow ones, per the design). "Everyone"
+ * is the implicit default (not included here); pending attribution is
+ * surfaced as a filter choice alongside each resolved member, and omitted
+ * entirely once no post has an unresolved sharer.
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @returns {{ totalCount: number, pendingCount: number, members: Array<{ id: number, displayName: string, postCount: number }> }}
+ */
+export function getMemberFilterOptions(db) {
+  const totalCount = db.prepare('SELECT COUNT(*) AS count FROM posts').get().count;
+  const pendingCount = db
+    .prepare('SELECT COUNT(DISTINCT se.post_id) AS count FROM sharing_events se WHERE se.member_id IS NULL')
+    .get().count;
+  const members = db
+    .prepare(
+      `SELECT m.id, m.display_name AS displayName, COUNT(DISTINCT se.post_id) AS postCount
+       FROM members m
+       JOIN sharing_events se ON se.member_id = m.id
+       GROUP BY m.id
+       ORDER BY postCount DESC, displayName COLLATE NOCASE ASC`
+    )
+    .all();
+
+  return { totalCount, pendingCount, members };
 }
 
 function getSharersByPost(db, postIds) {
