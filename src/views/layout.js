@@ -20,8 +20,10 @@ export function layout({ title, active, isAdmin, lastUpdated, body }) {
     `<a href="${href}" aria-current="${active === key ? 'page' : 'false'}">${label}${extra}</a>`;
 
   const adminNav = isAdmin
-    ? navLink('/import', 'import', 'Import') + navLink('/review', 'review', 'Review')
-    : '';
+    ? navLink('/import', 'import', 'Import') +
+      navLink('/review', 'review', 'Review') +
+      `<form method="post" action="/logout" style="display:inline"><button type="submit" class="btn btn-secondary" style="padding:4px 12px">Logout</button></form>`
+    : `<a href="/login">Admin</a>`;
 
   const lastUpdatedText = lastUpdated
     ? `Last updated ${esc(lastUpdated)}`

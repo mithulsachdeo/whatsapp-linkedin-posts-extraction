@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createTestDb } from '../helpers/testDb.js';
 import { createApp } from '../../src/http/app.js';
+import { loginAsAdmin } from '../helpers/adminSession.js';
 
 const ADMIN_TOKEN = 'test-admin-token';
 
@@ -123,7 +124,8 @@ test('GET /posts/:id hides the group label from an anonymous visitor but shows i
     assert.doesNotMatch(anon.text, /Product Chai/);
     assert.doesNotMatch(anon.text, /PM Collective/);
 
-    const admin = await request(app).get(`/posts/${postId}`).set('x-admin-token', ADMIN_TOKEN);
+    const agent = await loginAsAdmin(app, ADMIN_TOKEN);
+    const admin = await agent.get(`/posts/${postId}`);
     assert.match(admin.text, /Product Chai/);
     assert.match(admin.text, /PM Collective/);
   } finally {

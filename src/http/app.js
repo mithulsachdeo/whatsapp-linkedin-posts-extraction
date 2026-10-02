@@ -14,7 +14,8 @@ import { renderDashboard } from '../views/dashboard.js';
 import { renderImportPage } from '../views/import.js';
 import { renderPostDetail } from '../views/postDetail.js';
 import { renderReviewPage } from '../views/review.js';
-import { detectAdmin, requireAdmin } from './adminAuth.js';
+import { renderLoginPage } from '../views/login.js';
+import { detectAdmin, requireAdmin, createSessionCookie, clearSessionCookie } from './adminAuth.js';
 import { WhatsAppTxtAdapter } from '../ingest/adapter.js';
 import { ingest } from '../ingest/ingest.js';
 import { GROUPS } from '../ingest/groups.js';
@@ -117,6 +118,48 @@ export function createApp(db, options = {}) {
         body: renderPostDetail(post, { isAdmin: req.isAdmin }),
       })
     );
+  });
+
+  // Admin login (ticket #10): the single gate in front of every mutating
+  // route. `next` is restricted to an on-site path (must start with a
+  // single `/`) so it can't be used as an open redirect.
+  app.get('/login', (req, res) => {
+    if (req.isAdmin) {
+      res.redirect(safeNext(req.query.next) ?? '/');
+      return;
+    }
+    res.send(
+      layout({
+        title: 'Admin login',
+        active: 'posts',
+        isAdmin: req.isAdmin,
+        lastUpdated: getDashboard(db).lastUpdated,
+        body: renderLoginPage({ next: typeof req.query.next === 'string' ? req.query.next : '' }),
+      })
+    );
+  });
+
+  app.post('/login', (req, res) => {
+    const { password, next } = req.body ?? {};
+    if (!adminToken || password !== adminToken) {
+      res.status(401).send(
+        layout({
+          title: 'Admin login',
+          active: 'posts',
+          isAdmin: false,
+          lastUpdated: getDashboard(db).lastUpdated,
+          body: renderLoginPage({ error: 'Incorrect password.', next: typeof next === 'string' ? next : '' }),
+        })
+      );
+      return;
+    }
+    res.setHeader('Set-Cookie', createSessionCookie(adminToken));
+    res.redirect(safeNext(next) ?? '/');
+  });
+
+  app.post('/logout', (req, res) => {
+    res.setHeader('Set-Cookie', clearSessionCookie());
+    res.redirect('/');
   });
 
   app.get('/import', requireAdmin, (req, res) => {
@@ -321,6 +364,15 @@ export function createApp(db, options = {}) {
   });
 
   return app;
+}
+
+// Restricts post-login redirects to an on-site path -- `next` is
+// user-controlled (round-tripped through the login form), so anything that
+// could be interpreted as an absolute/protocol-relative URL is rejected
+// rather than followed.
+function safeNext(next) {
+  if (typeof next !== 'string' || !next.startsWith('/') || next.startsWith('//')) return null;
+  return next;
 }
 
 function buildToastFromQuery(query) {

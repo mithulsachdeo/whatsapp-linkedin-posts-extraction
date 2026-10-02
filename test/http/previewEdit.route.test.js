@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createTestDb } from '../helpers/testDb.js';
 import { createApp } from '../../src/http/app.js';
+import { loginAsAdmin } from '../helpers/adminSession.js';
 
 const ADMIN_TOKEN = 'test-admin-token';
 
@@ -14,11 +15,11 @@ function buildApp() {
   return { app, db, close };
 }
 
-test('POST /posts/:id/preview is forbidden without the admin token', async () => {
+test('POST /posts/:id/preview is unauthorized without a logged-in admin session', async () => {
   const { app, close } = buildApp();
   try {
     const res = await request(app).post('/posts/1/preview').type('form').send({ author: 'x' });
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 401);
   } finally {
     close();
   }
@@ -36,9 +37,9 @@ test("POST /posts/:id/preview lets the admin override a post's preview, which th
        VALUES (?, 'group-a', 'Priya Sharma', '2026-09-30T10:15:00.000Z')`
     ).run(postId);
 
-    const res = await request(app)
+    const agent = await loginAsAdmin(app, ADMIN_TOKEN);
+    const res = await agent
       .post(`/posts/${postId}/preview`)
-      .set('x-admin-token', ADMIN_TOKEN)
       .type('form')
       .send({ author: 'Priya Sharma', role: 'PM @ Acme', excerpt: 'Worth a read.' });
 

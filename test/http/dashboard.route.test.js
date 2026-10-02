@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createTestDb } from '../helpers/testDb.js';
 import { createApp } from '../../src/http/app.js';
+import { loginAsAdmin } from '../helpers/adminSession.js';
 
 const ADMIN_TOKEN = 'test-admin-token';
 
@@ -26,10 +27,11 @@ test('GET / renders the no-posts-yet empty state for an anonymous visitor', asyn
   }
 });
 
-test('GET / shows admin-flavoured empty-state copy and nav when the admin token is presented', async () => {
+test('GET / shows admin-flavoured empty-state copy and nav for a logged-in admin', async () => {
   const { app, close } = buildApp();
   try {
-    const res = await request(app).get('/').set('x-admin-token', ADMIN_TOKEN);
+    const agent = await loginAsAdmin(app, ADMIN_TOKEN);
+    const res = await agent.get('/');
     assert.equal(res.status, 200);
     assert.match(res.text, />Import</);
     assert.match(res.text, />Review</);
@@ -39,20 +41,22 @@ test('GET / shows admin-flavoured empty-state copy and nav when the admin token 
   }
 });
 
-test('GET /import is forbidden without the admin token', async () => {
+test('GET /import redirects an anonymous visitor to /login', async () => {
   const { app, close } = buildApp();
   try {
     const res = await request(app).get('/import');
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.location, '/login?next=%2Fimport');
   } finally {
     close();
   }
 });
 
-test('GET /import succeeds with the admin token', async () => {
+test('GET /import succeeds for a logged-in admin', async () => {
   const { app, close } = buildApp();
   try {
-    const res = await request(app).get('/import').set('x-admin-token', ADMIN_TOKEN);
+    const agent = await loginAsAdmin(app, ADMIN_TOKEN);
+    const res = await agent.get('/import');
     assert.equal(res.status, 200);
     assert.match(res.text, /Import a chat export/);
   } finally {
@@ -60,20 +64,22 @@ test('GET /import succeeds with the admin token', async () => {
   }
 });
 
-test('GET /review is forbidden without the admin token', async () => {
+test('GET /review redirects an anonymous visitor to /login', async () => {
   const { app, close } = buildApp();
   try {
     const res = await request(app).get('/review');
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.location, '/login?next=%2Freview');
   } finally {
     close();
   }
 });
 
-test('GET /review succeeds with the admin token', async () => {
+test('GET /review succeeds for a logged-in admin', async () => {
   const { app, close } = buildApp();
   try {
-    const res = await request(app).get('/review').set('x-admin-token', ADMIN_TOKEN);
+    const agent = await loginAsAdmin(app, ADMIN_TOKEN);
+    const res = await agent.get('/review');
     assert.equal(res.status, 200);
     assert.match(res.text, /Review queue/);
   } finally {
