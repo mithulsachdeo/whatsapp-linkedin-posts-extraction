@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Postboard" description="Operate-mode dashboard for LinkedIn posts shared in WhatsApp groups: browse, post detail, member view, chat import, pending attribution and empty states" -->
+<helmet><script src="./ds-base.js"></script><style>body{margin:0;background:var(--color-neutral-200)}</style></helmet>
+<div ref="{{ frameRef }}" style="min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);position:relative">
+<nav class="nav" style="flex-wrap:wrap;gap:var(--space-2) var(--space-4);padding:var(--space-4) var(--space-6)">
+<span class="nav-brand" style="display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border-radius:50%;background:var(--color-accent);display:inline-block"></span>Postboard</span>
+<a href="#" aria-current="{{ curPosts }}" onClick="{{ goPosts }}">Posts</a>
+<sc-if value="{{ isAdmin }}" hint-placeholder-val="{{ true }}">
+<a href="#" aria-current="{{ curImport }}" onClick="{{ goImport }}">Import</a>
+<a href="#" aria-current="{{ curReview }}" onClick="{{ goReview }}" style="display:inline-flex;align-items:center;gap:6px">Review<sc-if value="{{ hasUnknowns }}"><span class="tag tag-accent-2" style="padding:1px 8px">{{ unknownCount }}</span></sc-if></a>
+</sc-if>
+</nav>
+<main style="padding:var(--space-4) var(--space-6) 80px;max-width:1180px">
+<sc-if value="{{ isPosts }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-wrap:wrap;gap:var(--space-8);align-items:flex-start">
+<sc-if value="{{ showSidebar }}">
+<aside style="flex:0 0 220px;position:sticky;top:var(--space-6);padding-top:var(--space-2)">
+<h6 style="color:var(--color-neutral-700);margin-bottom:var(--space-3);font-family:var(--font-body);font-weight:700">Shared by</h6>
+<div style="display:flex;flex-direction:column;gap:2px">
+<sc-for list="{{ sideItems }}" as="m" hint-placeholder-count="8">
+<sc-if value="{{ m.active }}"><button onClick="{{ m.select }}" style="border:0;font:inherit;font-size:14px;text-align:left;cursor:pointer;width:100%;display:flex;align-items:center;gap:10px;padding:5px 12px 5px 5px;border-radius:999px;background:var(--color-accent-200);color:var(--color-accent-900);font-weight:600"><sc-if value="{{ m.pend }}"><span style="width:26px;height:26px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px dashed var(--color-neutral-600);color:var(--color-neutral-700);font-size:12px;font-weight:700">?</span></sc-if><sc-if value="{{ m.known }}"><span style="width:26px;height:26px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-size:10px;font-weight:700">{{ m.initials }}</span></sc-if><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.name }}</span><span style="font-size:12px">{{ m.count }}</span></button></sc-if>
+<sc-if value="{{ m.inactive }}"><button onClick="{{ m.select }}" style="border:0;font:inherit;font-size:14px;text-align:left;cursor:pointer;width:100%;display:flex;align-items:center;gap:10px;padding:5px 12px 5px 5px;border-radius:999px;background:transparent;color:var(--color-text)" style-hover="background:var(--color-neutral-200)"><sc-if value="{{ m.pend }}"><span style="width:26px;height:26px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px dashed var(--color-neutral-600);color:var(--color-neutral-700);font-size:12px;font-weight:700">?</span></sc-if><sc-if value="{{ m.known }}"><span style="width:26px;height:26px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-size:10px;font-weight:700">{{ m.initials }}</span></sc-if><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.name }}</span><span style="font-size:12px;color:var(--color-neutral-700)">{{ m.count }}</span></button></sc-if>
+</sc-for>
+</div>
+</aside>
+</sc-if>
+<section style="flex:1 1 480px;min-width:0">
+<sc-if value="{{ isEmptyData }}">
+<div style="max-width:560px;padding:var(--space-8) 0">
+<div style="display:flex;margin-bottom:var(--space-6)"><span style="width:72px;height:72px;border-radius:50%;background:var(--color-accent-200)"></span><span style="width:72px;height:72px;border-radius:50%;background:var(--color-accent-2-200);margin-left:-22px"></span><span style="width:72px;height:72px;border-radius:50%;background:var(--color-neutral-300);margin-left:-22px"></span></div>
+<h1 style="font-size:40px">No posts yet</h1>
+<sc-if value="{{ isAdmin }}">
+<p style="font-size:16px;max-width:46ch;text-wrap:pretty">Import a WhatsApp chat export and every LinkedIn post shared in it shows up here once, with who shared it and when.</p>
+<ol style="list-style:none;padding:0;margin:var(--space-6) 0;display:flex;flex-direction:column;gap:var(--space-3)">
+<li style="display:flex;gap:var(--space-3);align-items:center"><span style="width:36px;height:36px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-200);color:var(--color-accent-800);font-family:var(--font-heading)">1</span><span>In WhatsApp, export the group chat without media.</span></li>
+<li style="display:flex;gap:var(--space-3);align-items:center"><span style="width:36px;height:36px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-200);color:var(--color-accent-800);font-family:var(--font-heading)">2</span><span>Upload the .txt or .zip here and pick the group it came from.</span></li>
+<li style="display:flex;gap:var(--space-3);align-items:center"><span style="width:36px;height:36px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-200);color:var(--color-accent-800);font-family:var(--font-heading)">3</span><span>Links are extracted, de-duplicated and matched to members.</span></li>
+</ol>
+<button class="btn btn-primary" onClick="{{ goImport }}" style="padding:12px 22px;font-size:15px">Import a chat export</button>
+</sc-if>
+<sc-if value="{{ isMember }}">
+<p style="font-size:16px;max-width:46ch;text-wrap:pretty">No chats have been imported yet. Posts shared in the group will appear here after the admin's first import.</p>
+</sc-if>
+</div>
+</sc-if>
+<sc-if value="{{ hasData }}" hint-placeholder-val="{{ true }}">
+<sc-if value="{{ isAllView }}" hint-placeholder-val="{{ true }}">
+<h1 style="font-size:40px;max-width:18ch;margin-bottom:var(--space-3)">Every post the groups shared</h1>
+<p style="max-width:60ch;color:var(--color-neutral-700);margin:0">{{ totalLine }}</p>
+</sc-if>
+<sc-if value="{{ isMemberView }}">
+<button class="btn btn-ghost" onClick="{{ clearFilter }}" style="margin-bottom:var(--space-3)"><svg width="16" height="16" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>All posts</button>
+<div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
+<span style="width:72px;height:72px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-family:var(--font-heading);font-size:26px">{{ memberHead.initials }}</span>
+<div><h1 style="font-size:36px;margin-bottom:4px">{{ memberHead.name }}</h1><p style="margin:0;color:var(--color-neutral-700)">{{ memberHead.stats }}</p></div>
+</div>
+</sc-if>
+<sc-if value="{{ isPendingView }}">
+<button class="btn btn-ghost" onClick="{{ clearFilter }}" style="margin-bottom:var(--space-3)"><svg width="16" height="16" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>All posts</button>
+<h1 style="font-size:36px;margin-bottom:var(--space-2)">Pending attribution</h1>
+<p style="max-width:58ch;color:var(--color-neutral-700);margin:0">Posts with at least one share from a sender who isn't matched to a member yet. They're counted normally; only the name is waiting.</p>
+</sc-if>
+<div style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center;margin:var(--space-6) 0 var(--space-3)">
+<div style="position:relative;flex:1 1 260px;min-width:0">
+<svg width="17" height="17" viewBox="0 0 24 24" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);fill:none;stroke:var(--color-neutral-700);stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round;pointer-events:none"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+<input class="input" type="search" placeholder="Search posts, authors or members" value="{{ query }}" onChange="{{ onQuery }}" style="padding-left:40px;min-height:42px">
+</div>
+<div class="seg" role="radiogroup" aria-label="Sort"><label class="seg-opt"><input type="radio" name="pb-sort" checked="{{ sortRecent }}" onChange="{{ setRecent }}">Recent</label><label class="seg-opt"><input type="radio" name="pb-sort" checked="{{ sortMost }}" onChange="{{ setMost }}">Most shared</label></div>
+<div class="seg" role="radiogroup" aria-label="Density"><label class="seg-opt"><input type="radio" name="pb-density" checked="{{ dRows }}" onChange="{{ setRows }}">Rows</label><label class="seg-opt"><input type="radio" name="pb-density" checked="{{ dCards }}" onChange="{{ setCards }}">Cards</label></div>
+</div>
+<div style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center;justify-content:space-between;margin-bottom:var(--space-4)">
+<div style="display:flex;flex-wrap:wrap;gap:var(--space-2);align-items:center;flex:1 1 auto">
+<sc-if value="{{ narrow }}">{{ memberSelect }}</sc-if>
+<div class="seg" role="radiogroup" aria-label="Group"><label class="seg-opt"><input type="radio" name="pb-group" checked="{{ gAll }}" onChange="{{ setGAll }}">All groups</label><label class="seg-opt"><input type="radio" name="pb-group" checked="{{ gA }}" onChange="{{ setGA }}">PM Collective</label><label class="seg-opt"><input type="radio" name="pb-group" checked="{{ gB }}" onChange="{{ setGB }}">Product Chai</label></div>
+</div>
+<span style="font-size:13px;color:var(--color-neutral-700)">{{ resultLine }}</span>
+</div>
+<sc-if value="{{ noResults }}">
+<div style="padding:var(--space-8) var(--space-4);display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2)">
+<span style="width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--color-neutral-200);margin-bottom:var(--space-2)"><svg width="24" height="24" viewBox="0 0 24 24" style="fill:none;stroke:var(--color-neutral-700);stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></span>
+<h3 style="margin:0">{{ noResultsTitle }}</h3>
+<p style="margin:0;color:var(--color-neutral-700);max-width:48ch">Try a different word, or widen the group and member filters.</p>
+<button class="btn btn-secondary" onClick="{{ resetFilters }}" style="margin-top:var(--space-2)">Clear search and filters</button>
+</div>
+</sc-if>
+<sc-if value="{{ dRows }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;gap:4px;margin-inline:calc(var(--space-4) * -1)">
+<sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+<div role="button" tabIndex="0" onClick="{{ r.open }}" onKeyDown="{{ r.key }}" style="display:flex;gap:var(--space-4);align-items:flex-start;padding:var(--space-3) var(--space-4);border-radius:var(--radius-lg);cursor:pointer" style-hover="background:var(--color-neutral-200)">
+<sc-if value="{{ r.multi }}"><div style="width:52px;height:52px;flex:none;border-radius:50%;background:var(--color-accent-200);color:var(--color-accent-800);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1"><span style="font-family:var(--font-heading);font-size:21px">{{ r.count }}</span><span style="font-size:10px;margin-top:3px">shares</span></div></sc-if>
+<sc-if value="{{ r.single }}"><div style="width:52px;height:52px;flex:none;border-radius:50%;background:var(--color-neutral-200);color:var(--color-neutral-800);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1"><span style="font-family:var(--font-heading);font-size:21px">1</span><span style="font-size:10px;margin-top:3px">share</span></div></sc-if>
+<div style="flex:1;min-width:0">
+<div style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline"><span style="font-weight:700;font-size:15px">{{ r.author }}</span><span style="font-size:13px;color:var(--color-neutral-700)">{{ r.role }}</span></div>
+<sc-if value="{{ r.hasPreview }}"><p style="margin:3px 0 8px;font-size:14px;line-height:1.5;max-width:72ch;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ r.text }}</p></sc-if>
+<sc-if value="{{ r.noPreview }}"><p style="margin:3px 0 8px;font-size:13.5px;color:var(--color-neutral-700);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.text }}</p></sc-if>
+<div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12.5px;color:var(--color-neutral-700)"><span>{{ r.sharedBy }}</span><span>{{ r.span }}</span><sc-for list="{{ r.groups }}" as="g"><span class="tag tag-neutral">{{ g.name }}</span></sc-for><sc-if value="{{ r.hasPending }}"><span class="tag tag-accent-2">Pending attribution</span></sc-if></div>
+</div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ dCards }}">
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--space-4)">
+<sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+<div class="card" role="button" tabIndex="0" onClick="{{ r.open }}" onKeyDown="{{ r.key }}" style="cursor:pointer;padding:var(--space-4) var(--space-4) var(--space-4);gap:var(--space-2)" style-hover="box-shadow:var(--shadow-md)">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2)">
+<sc-if value="{{ r.multi }}"><span class="tag tag-accent" style="font-weight:600">{{ r.count }} shares</span></sc-if>
+<sc-if value="{{ r.single }}"><span class="tag tag-neutral">1 share</span></sc-if>
+<span style="font-size:12px;color:var(--color-neutral-700)">{{ r.lastDate }}</span>
+</div>
+<div class="card-title" style="margin-top:4px">{{ r.author }}</div>
+<sc-if value="{{ r.hasPreview }}"><p class="card-body" style="opacity:1;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;font-size:13.5px">{{ r.text }}</p></sc-if>
+<sc-if value="{{ r.noPreview }}"><p class="card-body" style="opacity:1;color:var(--color-neutral-700);word-break:break-all;font-size:13px">{{ r.text }}</p></sc-if>
+<div style="font-size:12.5px;color:var(--color-neutral-700)">{{ r.sharedBy }}</div>
+<div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ r.groups }}" as="g"><span class="tag tag-neutral" style="background:var(--color-neutral-200)">{{ g.name }}</span></sc-for><sc-if value="{{ r.hasPending }}"><span class="tag tag-accent-2">Pending attribution</span></sc-if></div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</sc-if>
+</section>
+</div>
+</sc-if>
+<sc-if value="{{ isPost }}">
+<button class="btn btn-ghost" onClick="{{ goBack }}" style="margin-bottom:var(--space-4)"><svg width="16" height="16" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>{{ backLabel }}</button>
+<div style="display:flex;flex-wrap:wrap;gap:var(--space-8);align-items:flex-start">
+<article style="flex:1 1 420px;min-width:0;max-width:640px">
+<h1 style="font-size:36px;margin-bottom:4px">{{ post.author }}</h1>
+<p style="color:var(--color-neutral-700);margin-bottom:var(--space-4)">{{ post.role }}</p>
+<div style="background:var(--color-surface);border-radius:var(--radius-lg);padding:var(--space-6);font-size:16px;line-height:1.6;text-wrap:pretty">
+<sc-if value="{{ post.hasPreview }}"><p style="margin:0">{{ post.text }}</p></sc-if>
+<sc-if value="{{ post.noPreview }}"><p style="margin:0 0 var(--space-2);font-weight:600">LinkedIn didn't return a preview for this post.</p><p style="margin:0;color:var(--color-neutral-700);word-break:break-all;font-size:14px">{{ post.url }}</p></sc-if>
+</div>
+<div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-4);align-items:center">
+<a class="btn btn-primary" href="{{ post.url }}" target="_blank" rel="noopener" style="padding:11px 20px">Open on LinkedIn<svg width="15" height="15" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>
+<button class="btn btn-secondary" onClick="{{ copyLink }}" style="padding:11px 20px">{{ copyLabel }}</button>
+</div>
+</article>
+<aside style="flex:1 1 320px;min-width:0;max-width:440px">
+<h3 style="margin-bottom:4px">{{ post.sharedTitle }}</h3>
+<p style="color:var(--color-neutral-700);font-size:14px;margin-bottom:var(--space-4)">{{ post.sharedSub }}</p>
+<ol style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--space-4)">
+<sc-for list="{{ post.shares }}" as="s" hint-placeholder-count="3">
+<li style="display:flex;gap:var(--space-3);align-items:flex-start">
+<sc-if value="{{ s.known }}"><span style="width:36px;height:36px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-size:12px;font-weight:700">{{ s.initials }}</span></sc-if>
+<sc-if value="{{ s.pend }}"><span style="width:36px;height:36px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px dashed var(--color-neutral-600);color:var(--color-neutral-700);font-size:13px;font-weight:700">?</span></sc-if>
+<div style="flex:1;min-width:0">
+<div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center"><span style="font-weight:700">{{ s.name }}</span><sc-if value="{{ s.pend }}"><span class="tag tag-accent-2">Pending attribution</span></sc-if><sc-if value="{{ s.first }}"><span class="tag tag-accent">First shared</span></sc-if></div>
+<div style="font-size:13px;color:var(--color-neutral-700)">{{ s.when }} · {{ s.group }}</div>
+<sc-if value="{{ s.hasNote }}"><p style="margin:6px 0 0;font-size:14px;padding:8px 14px;background:var(--color-neutral-100);border-radius:var(--radius-md);max-width:44ch">“{{ s.note }}”</p></sc-if>
+</div>
+</li>
+</sc-for>
+</ol>
+</aside>
+</div>
+</sc-if>
+<sc-if value="{{ isImport }}">
+<div style="display:flex;flex-wrap:wrap;gap:var(--space-8);align-items:flex-start">
+<section style="flex:1 1 420px;min-width:0;max-width:620px">
+<h1 style="font-size:36px;margin-bottom:var(--space-2)">Import a chat export</h1>
+<p style="color:var(--color-neutral-700);max-width:54ch;margin-bottom:var(--space-6)">Posts already on the board are recognised and counted, never duplicated. Messages covered by an earlier export of the same group are skipped.</p>
+<sc-if value="{{ stIdle }}" hint-placeholder-val="{{ true }}">
+<div class="field" style="margin-bottom:var(--space-4)"><label>Which group is this export from?</label><div class="seg"><label class="seg-opt"><input type="radio" name="pb-imp" checked="{{ impA }}" onChange="{{ setImpA }}">PM Collective</label><label class="seg-opt"><input type="radio" name="pb-imp" checked="{{ impB }}" onChange="{{ setImpB }}">Product Chai</label></div></div>
+<div role="button" tabIndex="0" onClick="{{ chooseFile }}" onDragOver="{{ onDragOver }}" onDrop="{{ onDrop }}" style="display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);padding:var(--space-8) var(--space-6);border-radius:var(--radius-lg);background:var(--color-surface);border:2px dashed var(--color-neutral-400);cursor:pointer" style-hover="border-color:var(--color-accent)">
+<span style="width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-200);color:var(--color-accent-800);margin-bottom:var(--space-2)"><svg width="22" height="22" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m17 8-5-5-5 5"></path><path d="M12 3v12"></path></svg></span>
+<sc-if value="{{ noFile }}" hint-placeholder-val="{{ true }}"><h4 style="margin:0">Drop the exported .txt or .zip here</h4><span style="font-size:14px;color:var(--color-neutral-700)">or click to choose a file</span></sc-if>
+<sc-if value="{{ hasFile }}"><h4 style="margin:0;word-break:break-all">{{ fileName }}</h4><span style="font-size:14px;color:var(--color-neutral-700)">Ready to import into {{ impGroupName }}. Click to choose a different file.</span></sc-if>
+</div>
+<p style="font-size:13px;color:var(--color-neutral-700);margin:var(--space-3) 0 var(--space-4)">In WhatsApp, open the group, tap its name, then Export chat → Without media.</p>
+<button class="btn btn-primary" disabled="{{ noFile }}" onClick="{{ startImport }}" style="padding:12px 24px;font-size:15px">Import</button>
+</sc-if>
+<sc-if value="{{ stRunning }}">
+<div class="card" style="padding:var(--space-6);gap:var(--space-3)">
+<div class="card-kicker" style="color:var(--color-accent-700)">Importing {{ fileName }}</div>
+<h3 style="margin:0">{{ stageLabel }}</h3>
+<div style="height:12px;border-radius:999px;background:var(--color-neutral-300);overflow:hidden"><div ref="{{ barRef }}" style="height:100%;border-radius:999px;background:var(--color-accent);width:0%"></div></div>
+<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--color-neutral-700)"><span>You can leave this page. The import keeps running.</span><span>{{ pctStr }}</span></div>
+</div>
+</sc-if>
+<sc-if value="{{ stDone }}">
+<div class="card" style="padding:var(--space-6);gap:var(--space-4)">
+<div style="display:flex;gap:var(--space-3);align-items:center"><span style="width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800)"><svg width="20" height="20" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="M20 6 9 17l-5-5"></path></svg></span><div><h3 style="margin:0">Import finished</h3><span style="font-size:13px;color:var(--color-neutral-700)">{{ fileName }} · {{ impGroupName }}</span></div></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:var(--space-3)">
+<div style="background:var(--color-bg);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4)"><div style="font-family:var(--font-heading);font-size:26px">6,214</div><div style="font-size:13px;color:var(--color-neutral-700)">messages read</div></div>
+<div style="background:var(--color-bg);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4)"><div style="font-family:var(--font-heading);font-size:26px">31</div><div style="font-size:13px;color:var(--color-neutral-700)">LinkedIn links found</div></div>
+<div style="background:var(--color-bg);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4)"><div style="font-family:var(--font-heading);font-size:26px;color:var(--color-accent-700)">9</div><div style="font-size:13px;color:var(--color-neutral-700)">new posts</div></div>
+<div style="background:var(--color-bg);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4)"><div style="font-family:var(--font-heading);font-size:26px">22</div><div style="font-size:13px;color:var(--color-neutral-700)">already on the board</div></div>
+</div>
+<sc-if value="{{ hasUnknowns }}"><div style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center;background:var(--color-accent-2-100);color:var(--color-accent-2-900);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-4)"><span style="flex:1 1 260px;font-size:14px">{{ unknownSentence }}</span><button class="btn btn-secondary" onClick="{{ goReview }}" style="background:var(--color-bg)">Review senders</button></div></sc-if>
+<div style="display:flex;gap:var(--space-2);flex-wrap:wrap"><button class="btn btn-primary" onClick="{{ goPosts }}">View posts</button><button class="btn btn-ghost" onClick="{{ resetImport }}">Import another export</button></div>
+</div>
+</sc-if>
+</section>
+<section style="flex:1 1 340px;min-width:0;max-width:460px">
+<h4 style="margin-bottom:var(--space-3)">Import history</h4>
+<sc-if value="{{ hasImports }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;gap:var(--space-2)">
+<sc-for list="{{ imports }}" as="i" hint-placeholder-count="3">
+<div style="background:var(--color-surface);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-4);display:flex;flex-direction:column;gap:4px">
+<div style="display:flex;justify-content:space-between;gap:var(--space-2);align-items:center;flex-wrap:wrap"><span style="font-weight:700;font-size:14px">{{ i.when }}</span><sc-if value="{{ i.hasPending }}"><span class="tag tag-accent-2">{{ i.pendingLabel }}</span></sc-if><sc-if value="{{ i.clear }}"><span class="tag tag-neutral">Complete</span></sc-if></div>
+<div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ i.group }} · {{ i.file }}</div>
+<div style="font-size:12.5px;color:var(--color-neutral-700)">{{ i.stats }}</div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ noImports }}"><p style="font-size:14px;color:var(--color-neutral-700)">No imports yet. Each export you bring in is listed here with what it added.</p></sc-if>
+</section>
+</div>
+</sc-if>
+<sc-if value="{{ isReview }}">
+<div style="max-width:760px">
+<h1 style="font-size:36px;margin-bottom:var(--space-2)">Pending attribution</h1>
+<p style="color:var(--color-neutral-700);max-width:58ch">These senders appear in a chat export but don't match anyone on the member list. Their shares already count on the board and show the raw sender name until you match them.</p>
+<sc-if value="{{ hasUnknowns }}">
+<div style="display:flex;flex-direction:column;gap:var(--space-4);margin-top:var(--space-6)">
+<sc-for list="{{ reviewItems }}" as="u" hint-placeholder-count="3">
+<div class="card" style="padding:var(--space-4) var(--space-6);gap:var(--space-3)">
+<div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
+<span style="width:44px;height:44px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px dashed var(--color-neutral-600);color:var(--color-neutral-700);font-size:15px;font-weight:700">?</span>
+<div style="flex:1 1 200px;min-width:0"><div style="font-weight:700;font-size:16px">{{ u.label }}</div><div style="font-size:13px;color:var(--color-neutral-700)">{{ u.source }}</div></div>
+<span class="tag tag-accent-2">{{ u.shareLabel }}</span>
+</div>
+<div style="display:flex;flex-direction:column;gap:6px;background:var(--color-bg);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4)">
+<sc-for list="{{ u.shares }}" as="s"><div style="display:flex;gap:8px;font-size:13.5px;min-width:0;flex-wrap:wrap"><span style="font-weight:700">{{ s.author }}</span><span style="flex:1 1 200px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.text }}</span><span style="color:var(--color-neutral-700)">{{ s.when }}</span></div></sc-for>
+</div>
+<div style="display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center"><span style="font-size:13px;color:var(--color-neutral-700)">Match to</span>{{ u.picker }}<button class="btn btn-primary" disabled="{{ u.cannot }}" onClick="{{ u.match }}">Match</button></div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ noUnknowns }}">
+<div style="display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);padding:var(--space-8) 0">
+<span style="width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);margin-bottom:var(--space-2)"><svg width="26" height="26" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+<h3 style="margin:0">Everyone's accounted for</h3>
+<p style="margin:0;color:var(--color-neutral-700);max-width:50ch">Every share on the board is attributed to a member. Unmatched senders from future imports will appear here.</p>
+</div>
+</sc-if>
+</div>
+</sc-if>
+</main>
+<sc-if value="{{ hasToast }}">
+<div role="status" style="position:fixed;left:var(--space-6);bottom:var(--space-6);right:var(--space-6);max-width:520px;display:flex;gap:var(--space-3);align-items:center;background:var(--color-neutral-900);color:var(--color-neutral-100);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-3) var(--space-3) var(--space-4);box-shadow:var(--shadow-lg);font-size:14px">
+<span style="flex:1">{{ toastText }}</span>
+<button class="btn" onClick="{{ undo }}" style="color:var(--color-accent-300)" style-hover="background:var(--color-neutral-800)">Undo</button>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;admin&quot;,&quot;member&quot;],&quot;default&quot;:&quot;admin&quot;,&quot;tsType&quot;:&quot;'admin'|'member'&quot;,&quot;section&quot;:&quot;State&quot;},&quot;dataState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;populated&quot;,&quot;empty&quot;],&quot;default&quot;:&quot;populated&quot;,&quot;tsType&quot;:&quot;'populated'|'empty'&quot;,&quot;section&quot;:&quot;State&quot;},&quot;frame&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;desktop&quot;,&quot;mobile&quot;],&quot;default&quot;:&quot;desktop&quot;,&quot;tsType&quot;:&quot;'desktop'|'mobile'&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fD=s=>{const d=s.slice(0,10).split('-');return (+d[2])+' '+MON[+d[1]-1];};
+const fT=s=>fD(s)+', '+s.slice(11,16);
+const GROUPS={A:'PM Collective',B:'Product Chai'};
+const MEMBERS=[['m1','Ananya Rao'],['m2','Karan Mehta'],['m3','Priya Sharma'],['m4','Rohan Iyer'],['m5','Neha Kapoor'],['m6','Vikram Shah'],['m7','Shreya Nair'],['m8','Arjun Das']].map(([id,name])=>({id,name,initials:name.split(' ').map(w=>w[0]).join('')}));
+const MEM=Object.fromEntries(MEMBERS.map(m=>[m.id,m]));
+const UNKNOWN=[{id:'u1',label:'+91 98450 •••10',imp:'i2'},{id:'u2',label:'~ Sid',imp:'i2'},{id:'u3',label:'+44 7700 •••482',imp:'i3'}];
+const UNK=Object.fromEntries(UNKNOWN.map(u=>[u.id,u]));
+const IMPORTS=[{id:'i2',at:'2026-09-30 22:15',g:'B',file:'WhatsApp Chat with Product Chai.zip',msgs:'3,902',links:16,fresh:8},{id:'i1',at:'2026-09-30 21:40',g:'A',file:'WhatsApp Chat with PM Collective.zip',msgs:'2,140',links:12,fresh:5},{id:'i3',at:'2026-09-22 10:12',g:'A',file:'WhatsApp Chat with PM Collective.txt',msgs:'1,876',links:9,fresh:4}];
+const s=(by,g,at,note)=>({by,g,at,note});
+const POSTS=[
+{id:'p1',author:'Maya Fernandes',role:'Head of Product, Fintech',text:"Most roadmaps fail not because of bad prioritisation but because nobody agreed on what 'done' means. Three questions I now ask before anything goes on the board, and the one I dropped after it caused more arguments than it settled.",slug:'maya-fernandes_roadmaps-7381',shares:[s('m3','A','2026-09-26 09:14','Worth reading before Thursday’s roadmap review'),s('m1','B','2026-09-26 18:40'),s('u1','B','2026-09-27 08:02'),s('m5','A','2026-09-29 12:31','Third time this is going around, for good reason')]},
+{id:'p2',author:'Tom Okafor',role:'Product Lead, Marketplaces',text:'We killed our NPS survey. Here is what we replaced it with, and why our retention conversations got noticeably better within one quarter.',slug:'tomokafor_nps-7382',shares:[s('m2','A','2026-09-30 10:05'),s('m4','A','2026-09-30 16:22')]},
+{id:'p3',author:'Ishita Bose',role:'PM, Healthtech',text:'Discovery isn’t a phase. A thread on the weekly rituals that kept our team close to patients for two years, including the ones that failed.',slug:'ishitabose_discovery-7383',shares:[s('m7','B','2026-09-29 21:10','For anyone in regulated spaces')]},
+{id:'p4',author:'Daniel Kim',role:'VP Product',text:'The PRD template I wish I had as a first-time PM. One page, five headings, and a section most templates leave out: what we are deliberately not doing.',slug:'danielkim_prd-7384',shares:[s('m1','A','2026-09-18 11:00'),s('m6','B','2026-09-18 14:45'),s('m3','A','2026-09-19 09:30'),s('m8','B','2026-09-22 20:12'),s('m2','A','2026-09-25 08:55')]},
+{id:'p5',author:null,role:null,text:null,slug:'raghav-p_activity-7245119038',shares:[s('u2','B','2026-09-28 19:40')]},
+{id:'p6',author:'Sarah Lindqvist',role:'Group PM, B2B',text:'Saying no to a sales-led feature request without losing the deal: the exact script our team uses, and the follow-up email that does most of the work.',slug:'sarahlindqvist_sales-7386',shares:[s('m5','A','2026-09-24 13:20'),s('m3','B','2026-09-27 10:48')]},
+{id:'p7',author:'Aditya Menon',role:'Founder, Hiring platform',text:'Hiring PMs in 2026: we stopped asking for case studies. What we do instead, and what it revealed about candidates we would have rejected.',slug:'adityamenon_hiring-7387',shares:[s('m4','A','2026-09-21 09:15'),s('u3','A','2026-09-21 09:40'),s('m6','A','2026-09-21 17:02')]},
+{id:'p8',author:'Grace Liu',role:'Product Designer turned PM',text:'Your metrics dashboard is lying to you if no one on the team can explain the denominator. A short checklist for the next review.',slug:'graceliu_metrics-7388',shares:[s('m8','B','2026-09-30 20:30')]},
+{id:'p9',author:'Farhan Qureshi',role:'Director of Product',text:'Pricing page experiments we ran this quarter, and the one that surprised us: removing the cheapest plan increased sign-ups.',slug:'farhanq_pricing-7389',shares:[s('m2','A','2026-09-15 12:10'),s('m1','B','2026-09-16 08:20'),s('m7','A','2026-09-20 19:00')]},
+{id:'p10',author:'Elena Rossi',role:'Senior PM, B2B SaaS',text:'Writing a one-page strategy: the structure I use with every new team, with a worked example from a payments product.',slug:'elenarossi_strategy-7390',shares:[s('m6','A','2026-09-12 10:00')]},
+{id:'p11',author:'Kabir Malhotra',role:'PM, Consumer',text:'We shipped AI search and usage dropped. Notes from the post-mortem, and the three signals we ignored during beta.',slug:'kabirm_aisearch-7391',shares:[s('m3','A','2026-09-28 09:05'),s('m5','B','2026-09-28 11:40'),s('m1','A','2026-09-29 07:55'),s('m4','B','2026-09-30 13:15','Relevant for our Q4 bets')]},
+{id:'p12',author:'Nora Adeyemi',role:'CPO',text:'Stakeholder updates people actually read: four sentences, every Friday, same order. Here is the format.',slug:'noraadeyemi_updates-7392',shares:[s('m7','B','2026-09-10 18:30'),s('m8','A','2026-09-11 09:12')]},
+{id:'p13',author:'Jonas Berg',role:'Product Ops',text:'Our quarterly planning moved from three weeks to four days. What changed, what we lost, and why we would do it again.',slug:'jonasberg_planning-7393',shares:[s('m5','A','2026-09-08 15:00')]},
+{id:'p14',author:'Leela Pillai',role:'PM, Logistics',text:'Field visits beat interviews. Photos and lessons from six days in warehouses, and how they changed our picking flow.',slug:'leelapillai_field-7394',shares:[s('m1','B','2026-09-05 10:30'),s('m2','B','2026-09-06 12:00')]}
+].map(p=>({...p,url:'https://www.linkedin.com/posts/'+p.slug}));
+
+class Component extends DCLogic {
+  state={screen:'posts',postId:null,filter:'all',query:'',sort:'recent',density:'rows',group:'all',assigned:{},picks:{},toast:null,stage:'idle',file:null,impG:'A',pct:0,copied:false,width:1200};
+  frameRef=React.createRef();
+  componentDidMount(){
+    const el=this.frameRef.current;
+    if(el&&window.ResizeObserver){this.ro=new ResizeObserver(e=>{const w=e[0].contentRect.width;if(Math.abs(w-this.state.width)>2)this.setState({width:w});});this.ro.observe(el);}
+    this.applyFrame();
+  }
+  barRef=React.createRef();
+  componentDidUpdate(){this.applyFrame();if(this.barRef.current)this.barRef.current.style.width=this.state.pct+'%';}
+  componentWillUnmount(){this.ro&&this.ro.disconnect();clearInterval(this.timer);clearTimeout(this.tt);}
+  applyFrame(){
+    const el=this.frameRef.current;if(!el)return;
+    const m=this.props.frame==='mobile';
+    Object.assign(el.style,m?{maxWidth:'390px',minHeight:'844px',margin:'24px auto',borderRadius:'36px',boxShadow:'var(--shadow-lg)',overflow:'hidden'}:{maxWidth:'',minHeight:'100vh',margin:'0',borderRadius:'0',boxShadow:'none',overflow:''});
+  }
+  go(screen,extra){this.setState({screen,...(extra||{})});try{window.scrollTo(0,0);}catch(e){}}
+  nav(screen){return e=>{e&&e.preventDefault&&e.preventDefault();this.go(screen);};}
+  showToast(text,undoId){clearTimeout(this.tt);this.setState({toast:{text,undoId}});this.tt=setTimeout(()=>this.setState({toast:null}),5000);}
+  startImport(){
+    clearInterval(this.timer);this.setState({stage:'running',pct:0});
+    this.timer=setInterval(()=>{const p=Math.min(100,this.state.pct+3);if(p>=100){clearInterval(this.timer);this.setState({pct:100,stage:'done'});}else this.setState({pct:p});},90);
+  }
+  renderVals(){
+    const st=this.state,a=st.assigned;
+    const isAdmin=(this.props.role??'admin')==='admin';
+    const empty=this.props.dataState==='empty';
+    const posts=empty?[]:POSTS;
+    const unknowns=empty?[]:UNKNOWN.filter(u=>!a[u.id]);
+    const narrow=this.props.frame==='mobile'||st.width<760;
+    let screen=st.screen;
+    if(!isAdmin&&(screen==='import'||screen==='review'))screen='posts';
+    const isPend=by=>by[0]==='u'&&!a[by];
+    const memberOf=by=>by[0]==='u'?(a[by]||null):by;
+    const who=by=>{const m=memberOf(by);return m?MEM[m].name:UNK[by].label;};
+    const last=p=>p.shares.reduce((m,x)=>x.at>m?x.at:m,'');
+    const q=st.query.trim().toLowerCase();
+    const f=st.filter;
+    const list=posts.filter(p=>{
+      if(st.group!=='all'&&!p.shares.some(x=>x.g===st.group))return false;
+      if(f==='pending'&&!p.shares.some(x=>isPend(x.by)))return false;
+      if(f!=='all'&&f!=='pending'&&!p.shares.some(x=>memberOf(x.by)===f))return false;
+      if(q){const hay=[p.author,p.role,p.text,p.url,...p.shares.map(x=>who(x.by))].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+      return true;
+    });
+    list.sort((x,y)=>{const lx=last(x),ly=last(y);if(st.sort==='most'&&y.shares.length!==x.shares.length)return y.shares.length-x.shares.length;return ly>lx?1:ly<lx?-1:0;});
+    const open=id=>()=>{this.go('post',{postId:id,copied:false});};
+    const rows=list.map(p=>{
+      const sh=[...p.shares].sort((x,y)=>x.at<y.at?-1:1);
+      const first=sh[0],lst=sh[sh.length-1];
+      const people=[...new Set(sh.map(x=>x.by))];
+      const others=people.length-1;
+      const n=sh.length;
+      return {id:p.id,author:p.author||'Preview unavailable',role:p.role||'',hasPreview:!!p.author,noPreview:!p.author,text:p.text||p.url.replace('https://www.',''),
+        count:n,multi:n>1,single:n===1,
+        sharedBy:'Shared by '+who(first.by)+(others?` + ${others} other${others>1?'s':''}`:''),
+        span:first.at.slice(0,10)===lst.at.slice(0,10)?fD(first.at):fD(first.at)+' – '+fD(lst.at),
+        lastDate:fD(lst.at),
+        groups:[...new Set(sh.map(x=>x.g))].map(g=>({name:GROUPS[g]})),
+        hasPending:sh.some(x=>isPend(x.by)),
+        open:open(p.id),key:e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open(p.id)();}}};
+    });
+    const counts={};posts.forEach(p=>{new Set(p.shares.map(x=>memberOf(x.by)).filter(Boolean)).forEach(m=>{counts[m]=(counts[m]||0)+1;});});
+    const pendPosts=posts.filter(p=>p.shares.some(x=>isPend(x.by))).length;
+    const setFilter=v=>this.setState({filter:v,screen:'posts'});
+    const item=(id,name,initials,count,pend)=>({name,initials,count,pend,known:!pend,active:f===id,inactive:f!==id,select:()=>setFilter(id)});
+    const sorted=[...MEMBERS].filter(m=>counts[m.id]).sort((x,y)=>counts[y.id]-counts[x.id]||x.name.localeCompare(y.name));
+    const sideItems=[item('all','Everyone','All',posts.length,false),...sorted.map(m=>item(m.id,m.name,m.initials,counts[m.id],false))];
+    if(pendPosts)sideItems.push(item('pending','Pending attribution','?',pendPosts,true));
+    const opts=[['all',`Everyone (${posts.length})`],...sorted.map(m=>[m.id,`${m.name} (${counts[m.id]})`])];
+    if(pendPosts)opts.push(['pending',`Pending attribution (${pendPosts})`]);
+    const memberSelect=React.createElement('select',{className:'input','aria-label':'Shared by',value:f,onChange:e=>setFilter(e.target.value),style:{width:'auto',flex:'1 1 100%',minHeight:40}},opts.map(([v,l])=>React.createElement('option',{key:v,value:v},l)));
+    const isMemberView=f!=='all'&&f!=='pending'&&!!MEM[f];
+    let memberHead={name:'',initials:'',stats:''};
+    if(isMemberView){
+      const mine=[];posts.forEach(p=>p.shares.forEach(x=>{if(memberOf(x.by)===f)mine.push(x.at);}));mine.sort();
+      memberHead={name:MEM[f].name,initials:MEM[f].initials,stats:mine.length?`${counts[f]} post${counts[f]>1?'s':''} shared · ${mine.length} share${mine.length>1?'s':''} · first ${fD(mine[0])}, latest ${fD(mine[mine.length-1])}`:'No shares yet'};
+    }
+    const totalShares=posts.reduce((n,p)=>n+p.shares.length,0);
+    const lastImp=IMPORTS[0];
+    // post detail
+    const P=posts.find(p=>p.id===st.postId)||posts[0];
+    let post={author:'',role:'',text:'',url:'',hasPreview:true,noPreview:false,shares:[],sharedTitle:'',sharedSub:''};
+    if(P){
+      const sh=[...P.shares].sort((x,y)=>x.at<y.at?-1:1);
+      const gs=[...new Set(sh.map(x=>GROUPS[x.g]))];
+      post={author:P.author||'Preview unavailable',role:P.role||'Shared as a link only',text:P.text,url:P.url,hasPreview:!!P.author,noPreview:!P.author,
+        sharedTitle:sh.length===1?'Shared once':`Shared ${sh.length} times`,
+        sharedSub:(gs.length>1?'In both groups':'In '+gs[0])+', '+(sh.length===1?'on '+fD(sh[0].at):`between ${fD(sh[0].at)} and ${fD(sh[sh.length-1].at)}`)+'.',
+        shares:sh.map((x,i)=>{const pend=isPend(x.by);const m=memberOf(x.by);return {name:who(x.by),initials:m?MEM[m].initials:'?',pend,known:!pend,first:i===0&&sh.length>1,when:fT(x.at),group:GROUPS[x.g],hasNote:!!x.note,note:x.note||''};})};
+    }
+    const backLabel=isMemberView?'Back to '+MEM[f].name:f==='pending'?'Back to pending attribution':'Back to all posts';
+    // review
+    const reviewItems=unknowns.map(u=>{
+      const imp=IMPORTS.find(i=>i.id===u.imp);
+      const shares=[];posts.forEach(p=>p.shares.forEach(x=>{if(x.by===u.id)shares.push({author:p.author||'No preview',text:p.text||p.url.replace('https://www.',''),when:fD(x.at)});}));
+      const pick=st.picks[u.id]||'';
+      const picker=React.createElement('select',{className:'input','aria-label':'Match '+u.label+' to a member',value:pick,onChange:e=>{const v=e.target.value;this.setState(s2=>({picks:{...s2.picks,[u.id]:v}}));},style:{width:'auto',flex:'1 1 200px',maxWidth:280}},[React.createElement('option',{key:'',value:''},'Choose a member…'),...MEMBERS.map(m=>React.createElement('option',{key:m.id,value:m.id},m.name))]);
+      return {label:u.label,source:`First seen in the ${GROUPS[imp.g]} export, ${fD(imp.at)}`,shareLabel:shares.length===1?'1 share':shares.length+' shares',shares,picker,cannot:!pick,
+        match:()=>{if(!pick)return;this.setState(s2=>({assigned:{...s2.assigned,[u.id]:pick}}));this.showToast(`${u.label} is now ${MEM[pick].name}. Their shares show this name everywhere.`,u.id);}};
+    });
+    const imports=(empty?[]:IMPORTS).map(i=>{const n=unknowns.filter(u=>u.imp===i.id).length;return {when:fT(i.at),group:GROUPS[i.g],file:i.file,stats:`${i.msgs} messages · ${i.links} links · ${i.fresh} new posts`,hasPending:n>0,clear:n===0,pendingLabel:n+' pending'};});
+    const pct=st.pct;
+    const stageLabel=pct<30?'Reading 6,214 messages':pct<60?'Finding LinkedIn links':pct<85?'Removing duplicates':'Matching senders to members';
+    const unk=unknowns.length;
+    const groupSet=g=>()=>this.setState({group:g});
+    return {
+      frameRef:this.frameRef,barRef:this.barRef,isAdmin,isMember:!isAdmin,narrow,showSidebar:!narrow&&!empty,
+      curPosts:screen==='posts'||screen==='post'?'page':undefined,curImport:screen==='import'?'page':undefined,curReview:screen==='review'?'page':undefined,
+      goPosts:this.nav('posts'),goImport:this.nav('import'),goReview:this.nav('review'),
+      isPosts:screen==='posts',isPost:screen==='post'&&!!P,isImport:screen==='import',isReview:screen==='review',
+      isEmptyData:empty,hasData:!empty,
+      isAllView:f==='all',isMemberView,isPendingView:f==='pending',memberHead,
+      clearFilter:()=>this.setState({filter:'all'}),
+      totalLine:`${posts.length} unique posts from ${totalShares} shares across PM Collective and Product Chai. Each post appears once, however often it was shared. Last import ${fT(lastImp.at)}.`,
+      query:st.query,onQuery:e=>this.setState({query:e.target.value}),
+      sortRecent:st.sort==='recent',sortMost:st.sort==='most',setRecent:()=>this.setState({sort:'recent'}),setMost:()=>this.setState({sort:'most'}),
+      dRows:st.density==='rows',dCards:st.density==='cards',setRows:()=>this.setState({density:'rows'}),setCards:()=>this.setState({density:'cards'}),
+      gAll:st.group==='all',gA:st.group==='A',gB:st.group==='B',setGAll:groupSet('all'),setGA:groupSet('A'),setGB:groupSet('B'),
+      memberSelect,sideItems,rows,
+      resultLine:`${rows.length} post${rows.length===1?'':'s'} · ${st.sort==='most'?'most shared first':'most recent first'}`,
+      noResults:!empty&&rows.length===0,noResultsTitle:q?`No posts match “${st.query.trim()}”`:'No posts for these filters',
+      resetFilters:()=>this.setState({query:'',group:'all',filter:'all'}),
+      post,backLabel,goBack:()=>this.go('posts'),
+      copyLabel:st.copied?'Link copied':'Copy link',
+      copyLink:()=>{try{navigator.clipboard&&navigator.clipboard.writeText(post.url);}catch(e){}this.setState({copied:true});},
+      stIdle:st.stage==='idle',stRunning:st.stage==='running',stDone:st.stage==='done',
+      impA:st.impG==='A',impB:st.impG==='B',setImpA:()=>this.setState({impG:'A'}),setImpB:()=>this.setState({impG:'B'}),impGroupName:GROUPS[st.impG],
+      noFile:!st.file,hasFile:!!st.file,fileName:st.file||'',
+      chooseFile:()=>this.setState({file:`WhatsApp Chat with ${GROUPS[st.impG]}.zip`}),
+      onDragOver:e=>e.preventDefault(),
+      onDrop:e=>{e.preventDefault();const fl=e.dataTransfer&&e.dataTransfer.files[0];this.setState({file:fl?fl.name:`WhatsApp Chat with ${GROUPS[st.impG]}.zip`});},
+      startImport:()=>this.startImport(),resetImport:()=>this.setState({stage:'idle',file:null,pct:0}),
+      pctStr:pct+'%',stageLabel,
+      hasImports:imports.length>0,noImports:imports.length===0,imports,
+      hasUnknowns:unk>0,noUnknowns:unk===0,unknownCount:unk,
+      unknownSentence:`${unk} sender${unk>1?'s':''} couldn't be matched to a member. Their shares are counted and show the raw WhatsApp name until matched.`,
+      reviewItems,
+      hasToast:!!st.toast,toastText:st.toast?st.toast.text:'',
+      undo:()=>{const id=st.toast&&st.toast.undoId;clearTimeout(this.tt);this.setState(s2=>{const n={...s2.assigned};delete n[id];return {assigned:n,toast:null};});}
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -146,17 +146,29 @@ tracking is explicitly deferred to v2.
     the posts the community amplified most.
 33. As a member, I want to filter to everything a particular member shared, so
     that I can follow a specific person's contributions.
-34. As a member, I want to text-search over the post URL/slug, so that I can
-    locate a specific post.
+34. As a member, I want to text-search over the post URL/slug (and over any
+    fetched preview author/text), so that I can locate a specific post.
 35. As a member, I want to see a single "last updated" timestamp for the whole
     app, so that I know how current the data is.
+36. As a member, I want each post to show its fetched preview (author, role,
+    excerpt) when one is available, so that I can recognise and judge a post
+    without opening LinkedIn.
+37. As a member, I want a post whose preview could not be fetched to still
+    appear, showing its URL with a clear "no preview" note, so that no post is
+    hidden just because LinkedIn returned nothing.
+38. As the admin, I want to manually paste or edit a post's preview details, so
+    that important posts that failed to fetch can still read well on the board.
+39. As a member, I want to switch the list between a rows and a cards density,
+    so that I can scan the board the way I prefer.
+40. As a member, I want each share to optionally show the WhatsApp message text
+    that accompanied the link, so that I get the sharer's own context.
 
 ### Platform & administration
 
-36. As the admin, I want the mutating routes (ingest, review, member edits)
+41. As the admin, I want the mutating routes (ingest, review, member edits)
     protected by a shared admin password/token while the dashboard stays open,
     so that random visitors cannot corrupt the data before full auth exists.
-37. As the admin, I want the underlying data file backed up nightly on the
+42. As the admin, I want the underlying data file backed up nightly on the
     host, so that my manual attribution work is not lost.
 
 ## Implementation Decisions
@@ -171,15 +183,36 @@ tracking is explicitly deferred to v2.
   WhatsApp exports carry local wall-clock time with no zone; all parsing and
   display use this one value.
 - No LLM/AI calls anywhere in the core pipeline (extraction, classification,
-  identity mapping, dedup, status tracking). No LinkedIn post-content fetching,
-  scraping, or metrics (no likes/comments/impressions) — the only outbound HTTP
-  call is `lnkd.in` redirect resolution.
+  identity mapping, dedup, status tracking).
+- The core pipeline is fully offline and deterministic. Two outbound HTTP
+  concerns sit **beside** it, both best-effort and non-blocking: `lnkd.in`
+  redirect resolution (for canonicalization) and **post-preview fetching** (see
+  "Preview fetching"). No LinkedIn **engagement metrics** are fetched or claimed
+  — no likes, comments, or impressions (principle 8). A preview is public
+  descriptive content (author, title, excerpt), not an engagement claim.
+
+### Preview fetching (best-effort, cached, replaceable)
+
+- Previews sit behind a **`PreviewFetcher` port** so the fetch strategy is
+  swappable and fully stubbable in tests.
+- On import, each new Post triggers **one** best-effort preview fetch (public
+  Open-Graph-style author/title/excerpt). Ingestion **never blocks** on it and
+  never fails because of it.
+- Whatever is fetched is **cached** on the Post. A post whose preview could not
+  be fetched is marked `preview_unavailable` and still appears on the board in
+  the design's URL-only ("no preview") style — never hidden.
+- The admin can **manually set or edit** a Post's preview (author/role/excerpt),
+  which overrides the fetched value and survives re-imports.
+- Honest caveat carried from design review: LinkedIn heavily rate-limits and
+  often blocks unauthenticated preview fetches, so a meaningful share of posts
+  are expected to fall back to URL-only. This is acceptable by design.
 
 ### Ingestion (replaceable adapter boundary)
 
 - Ingestion sits behind an **`IngestionAdapter` interface**. v1 implements:
-  - **`WhatsAppTxtAdapter`** — parses a "Without Media" `.txt` export. Auto-detects
-    iOS (`[dd/mm/yy, h:mm:ss AM] Sender: msg`) vs Android
+  - **`WhatsAppTxtAdapter`** — parses a "Without Media" export supplied as a
+    `.txt` file, or as a `.zip` from which the chat `.txt` is extracted. Auto-
+    detects iOS (`[dd/mm/yy, h:mm:ss AM] Sender: msg`) vs Android
     (`dd/mm/yy, h:mm - Sender: msg`) formats and date ordering. Handles
     multi-line messages and skips system/notice lines.
   - **Folder-watch source** (Google Drive/Dropbox) — polls a configured folder
@@ -200,11 +233,14 @@ tracking is explicitly deferred to v2.
   numbers and display names are equal-strength, both just strings pointing to a
   member) and a display name.
 - **Post** — a unique LinkedIn post, keyed on its **canonical URL**. Accumulates
-  sharing events across both groups.
+  sharing events across both groups. Carries optional cached **preview** fields
+  (author, role/subtitle, excerpt), a `preview_unavailable` flag, and a flag
+  marking an admin-edited preview that must not be overwritten by a later fetch.
 - **SharingEvent** — one occurrence of a post being shared. Stores the raw
   sender string verbatim, the message timestamp, the `group_id`, the resolved
-  member (nullable → "Pending attribution"), and a link to its Post. Uniquely
-  identified by `(group_id, timestamp, raw_sender, canonical_url)`.
+  member (nullable → "Pending attribution"), an optional **note** (the WhatsApp
+  message text that accompanied the link, when present), and a link to its Post.
+  Uniquely identified by `(group_id, timestamp, raw_sender, canonical_url)`.
 - **ReviewItem** — an unresolved unit of work of one of three kinds:
   `UNKNOWN_SENDER`, `OTHER_LINKEDIN`, `UNRESOLVED_SHORT_LINK`.
 - **ImportBatch** — records each ingested file, including a content hash used to
@@ -259,17 +295,29 @@ tracking is explicitly deferred to v2.
 
 ### Dashboard
 
-- **Public, no login.** Post card shows: clickable canonical link, who shared it
-  (member display name(s) **and** the raw sender/phone — acceptable because the
-  deployment is internal-for-now), first-shared date, and share/distinct-sharer
-  count. Group is not displayed.
+- **Public, no login.** Post card/row shows: the cached preview (author, role,
+  excerpt) when available — otherwise the URL in the "no preview" style — a
+  clickable link, who shared it (member display name(s) **and** the raw
+  sender/phone, acceptable because the deployment is internal-for-now),
+  first/last-shared dates, and share/distinct-sharer count. **Group is not
+  displayed** (per the finalized decision; the design's group filter and group
+  tags are removed at implementation).
+- The list offers a **rows / cards density toggle**.
+- The **post detail** view lists every sharing event with its sharer, timestamp,
+  and the optional accompanying note, marks the first share, and links out to
+  LinkedIn.
 - Posts with an unresolved sharer still appear, labelled **"Pending
   attribution."**
 - **Default sort:** most-recently-shared first. Controls: sort (recent /
-  most-shared), filter-by-member, and text search over URL/slug. No tags/topics
-  in v1.
+  most-shared), filter-by-member, density toggle, and text search over URL/slug
+  and any fetched preview text. No tags/topics in v1.
 - A single app-wide **"last updated"** timestamp reflects the most recent
   successful ingestion.
+- **Visual source of truth:** the delivered design system at `Industry/`,
+  specifically the operate-mode **Postboard** template
+  (`Industry/templates/postboard/`) on the attached **Organic** system, and its
+  component pages. Implementation consumes those tokens/components; it strips the
+  group filter and group tags to honor the group-hidden decision.
 
 ### Access control (interim)
 
@@ -304,9 +352,12 @@ internals (parser structure, canonicalization helpers) can be refactored freely.
   most-shared sort, filter-by-member, URL search) and review-queue actions
   (each action's effect and its reversibility), tested through the route
   handlers.
-- Short-link resolution's outbound HTTP is the one external dependency; it is
-  stubbed at its boundary in tests (success → reclassified; failure → review
-  item), so tests stay deterministic and offline.
+- The two outbound HTTP concerns — short-link resolution and the
+  `PreviewFetcher` — are the external dependencies; both are stubbed at their
+  boundaries so tests stay deterministic and offline. Short link: success →
+  reclassified, failure → review item. Preview: success → cached on the Post,
+  failure → `preview_unavailable` set, ingestion still succeeds; an
+  admin-edited preview is not overwritten by a later fetch.
 - **Prior art:** none (greenfield). These two seams and the "temporary real
   SQLite, assert via public query API" pattern establish the convention for the
   project.
@@ -315,8 +366,9 @@ internals (parser structure, canonicalization helpers) can be refactored freely.
 
 - **Engagement tracking of any kind** (share-count *display* aside): no member
   upvotes/reactions, no "I engaged" marking — deferred to v2.
-- **Any LinkedIn activity metrics** (likes, comments, impressions) and any
-  LinkedIn post-content/preview fetching or scraping.
+- **Any LinkedIn activity/engagement metrics** (likes, comments, impressions) —
+  never fetched, never claimed. (Best-effort public *preview* fetching — author,
+  title, excerpt — is in scope and is not an engagement claim.)
 - **Automated WhatsApp ingestion** via unofficial libraries or the Business
   Cloud API — excluded by ToS/feasibility; only the adapter seam is prepared for
   a future permitted source.
@@ -344,6 +396,12 @@ internals (parser structure, canonicalization helpers) can be refactored freely.
   failures fall to the review queue. A real `lnkd.in` sample from the group
   should be used to verify exact redirect behaviour before implementing that
   path.
-- Issue-tracker publication was not performed: no tracker/triage-label vocabulary
-  was configured for this project. Run `/setup-matt-pocock-skills` to enable
-  publishing this spec (with the `ready-for-agent` label) to the tracker.
+- The GitHub issue tracker is configured (`docs/agents/issue-tracker.md`); this
+  spec is published as issue #1 and the implementation tickets are its children.
+- A complete, interactive design prototype was delivered at `Industry/` (the
+  Postboard template on the Organic system). It encodes the UI for every screen
+  — list, post detail, member view, pending attribution, import flow, review
+  queue, empty states, and a mobile frame. Two prototype decisions were
+  reconciled against this spec: **post previews are adopted** (best-effort,
+  cached, admin-editable), and **groups remain hidden** (the prototype's group
+  filter/tags are removed at implementation).
