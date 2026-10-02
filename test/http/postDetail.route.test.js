@@ -167,3 +167,20 @@ test('GET / links each post headline to its detail page', async () => {
     close();
   }
 });
+
+// Layout persistence (spec): the "Back to the front page" link is a plain
+// href="/" with no ?density -- it relies on the layout cookie, not the
+// query string, to remember the choice.
+test('"Back to the front page" has no ?density, and the layout cookie alone still restores the chosen layout', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    const postId = seedPost(db);
+    const detail = await request(app).get(`/posts/${postId}`).set('Cookie', 'layout=rows');
+    assert.match(detail.text, /href="\/"[^>]*>\s*←\s*Back to the front page/);
+
+    const back = await request(app).get('/').set('Cookie', 'layout=rows');
+    assert.match(back.text, /data-testid="post-list-rows"/);
+  } finally {
+    close();
+  }
+});

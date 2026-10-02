@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDashboard, getMemberFilterOptions, getPostDetail, getPostUrl } from '../query/dashboard.js';
 import { readIdsFromCookieHeader, addReadId, removeReadId, serializeReadCookie } from './readCookie.js';
+import { parseDensity, densityFromCookieHeader, serializeDensityCookie } from './densityCookie.js';
 import {
   getUnknownSenderReviewItems,
   getOtherLinkedInReviewItems,
@@ -60,7 +61,16 @@ export function createApp(db, options = {}) {
   app.use('/assets', express.static(INDUSTRY_DIR));
 
   app.get('/', (req, res) => {
-    const density = req.query.density === 'cards' ? 'cards' : 'rows';
+    // Layout persistence (spec): an explicit ?density is honoured and
+    // re-written to the cookie (so the latest explicit choice sticks);
+    // otherwise fall back to the cookie, then to the cards default. This is
+    // what lets postDetail's plain href="/" back-link restore the chosen
+    // layout without carrying it in the query string.
+    const explicitDensity = parseDensity(req.query.density);
+    const density = explicitDensity ?? densityFromCookieHeader(req.headers.cookie) ?? 'cards';
+    if (explicitDensity) {
+      res.setHeader('Set-Cookie', serializeDensityCookie(explicitDensity));
+    }
     // Always most-recently-shared first; a share-count sort was removed (it
     // ranked self-promotion, not endorsement). Any stray ?sort is ignored.
     const sort = 'recent';

@@ -19,7 +19,7 @@ import { esc } from './layout.js';
  */
 export function renderDashboard(
   { posts },
-  { isAdmin, density = 'rows', sort = 'recent', search = '', activeMember = null, filterOptions, view = 'unread' }
+  { isAdmin, density = 'cards', sort = 'recent', search = '', activeMember = null, filterOptions, view = 'unread' }
 ) {
   const hasAnyData = (filterOptions?.totalCount ?? 0) > 0;
   const state = { search, sort, density, activeMember, view };

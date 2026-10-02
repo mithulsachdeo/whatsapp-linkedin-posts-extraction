@@ -237,3 +237,60 @@ test('GET / with no posts at all still shows the first-run empty state, not the 
     close();
   }
 });
+
+// Layout persistence (spec): the Index/Columns choice is a per-device
+// cookie, not just a query param, so it survives navigation (e.g. back from
+// a post detail page) until the user picks a different layout again.
+test('GET / with no ?density and no cookie defaults to the Columns (cards) layout', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPosts(db);
+    const res = await request(app).get('/');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /data-testid="post-list-cards"/);
+    assert.doesNotMatch(res.text, /data-testid="post-list-rows"/);
+  } finally {
+    close();
+  }
+});
+
+test('GET /?density=rows renders the Index layout and sets the layout cookie', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPosts(db);
+    const res = await request(app).get('/?density=rows');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /data-testid="post-list-rows"/);
+    const setCookie = res.headers['set-cookie'] ?? [];
+    assert.ok(setCookie.some((c) => /^layout=rows;/.test(c)), 'expected a layout=rows Set-Cookie header');
+  } finally {
+    close();
+  }
+});
+
+test('GET / carrying only a layout=rows cookie (no ?density) still renders rows -- this is the back-from-detail fix', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPosts(db);
+    const res = await request(app).get('/').set('Cookie', 'layout=rows');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /data-testid="post-list-rows"/);
+    assert.doesNotMatch(res.text, /data-testid="post-list-cards"/);
+  } finally {
+    close();
+  }
+});
+
+test('GET /?density=cards overrides an existing layout=rows cookie and re-sets the cookie to cards', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPosts(db);
+    const res = await request(app).get('/?density=cards').set('Cookie', 'layout=rows');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /data-testid="post-list-cards"/);
+    const setCookie = res.headers['set-cookie'] ?? [];
+    assert.ok(setCookie.some((c) => /^layout=cards;/.test(c)), 'expected a layout=cards Set-Cookie header');
+  } finally {
+    close();
+  }
+});
