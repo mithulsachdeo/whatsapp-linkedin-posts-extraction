@@ -1,0 +1,12 @@
+:root{
+--font-masthead:'UnifrakturMaguntia','Old English Text MT',serif;
+--font-display:'Libre Caslon Display','Libre Caslon Text',Georgia,serif;
+--font-heading:var(--font-display);
+--font-body:'Newsreader',Georgia,'Times New Roman',serif;
+--font-ui:'Libre Franklin','Franklin Gothic Medium','Arial Narrow',sans-serif;
+--font-mono:'Courier Prime','Courier New',monospace;
+--text-2xs:10.5px;--text-xs:11px;--text-sm:13px;--text-base:16px;--text-md:18px;--text-lg:20px;--text-xl:26px;--text-2xl:34px;--text-3xl:48px;--text-4xl:64px;--text-5xl:88px;
+--leading-tight:1.04;--leading-snug:1.2;--leading-body:1.55;--leading-read:1.65;
+--tracking-label:.14em;--tracking-caps:.04em;
+--measure:64ch;
+}

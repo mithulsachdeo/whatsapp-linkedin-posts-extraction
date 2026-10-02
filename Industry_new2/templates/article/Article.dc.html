@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Article" description="Long-read article page: compact nameplate, headline, standfirst, ruled byline, halftone hero, drop-cap body, pull quote, inline figure and a side column" -->
+<helmet><script src="./ds-base.js"></script><script src="./image-slot.js"></script></helmet>
+<div ref="{{ rootRef }}" class="paper" style="min-height:100vh">
+<div style="max-width:1180px;margin:0 auto;padding:0 var(--space-6) var(--space-16)">
+<header style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:var(--space-2) var(--space-6);padding:var(--space-4) 0 var(--space-2);border-bottom:4px double var(--color-text)">
+<a href="#" style="font:44px/1 var(--font-masthead);color:var(--color-text);text-decoration:none">The Postboard</a>
+<nav class="options" aria-label="Sections"><a class="option" href="#">Front page</a><a class="option" aria-current="page" aria-selected="true" href="#">The long read</a><a class="option" href="#">Archive</a></nav>
+</header>
+<div class="article anim-rise" style="margin-top:var(--space-8)">
+<div class="article-main">
+<div class="kicker">The long read · Product practice</div>
+<h1 class="headline headline-xxl">Most roadmaps fail because nobody agreed on what ‘done’ means</h1>
+<p class="standfirst">Three questions to ask before anything goes on the board, and the one that caused more arguments than it settled.</p>
+<div class="article-byline"><span class="byline">By Maya Fernandes, Head of Product, Fintech</span><span class="dateline">MUMBAI · 26 SEP 2026 · 8 MIN READ</span></div>
+<figure class="figure"><div class="halftone" style="aspect-ratio:16/9"><image-slot id="article-hero" shape="rect" placeholder="Drop the lead photograph"></image-slot></div><figcaption class="caption">A roadmap review in progress. Photograph: add credit.</figcaption></figure>
+<div class="article-body" style="margin-top:var(--space-6)">
+<p>Most roadmaps fail not because of bad prioritisation but because nobody agreed on what done means. The engineering lead hears a shipped feature, the designer hears a tested one, and sales hears something they can put in a proposal on Monday.</p>
+<p>The first question I now ask is about the customer, not the team. What will a customer be able to do that they couldn't do the week before? If nobody can answer in one sentence, the item isn't ready for the board.</p>
+<blockquote class="pullquote"><p>If nobody can answer in one sentence, the item isn't ready for the board.</p><cite>Maya Fernandes</cite></blockquote>
+<p>The second is about evidence. How will we know, four weeks after release, whether it worked? Pick the measure before the work starts, and write down the number that would make you stop.</p>
+<figure class="figure" style="float:right;width:min(46%,300px);margin:6px 0 var(--space-4) var(--space-6)"><div class="halftone" style="aspect-ratio:3/4"><image-slot id="article-inline" shape="rect" placeholder="Inline photo"></image-slot></div><figcaption class="caption">The one-page brief each item now carries.</figcaption></figure>
+<p>The third is about ownership. Who decides the item is finished? One name, not a team. Shared ownership felt fair, but in practice it meant nobody could close anything.</p>
+<p>The question I dropped was about effort. Estimating size at the roadmap stage invited debates that belonged in sprint planning, and it anchored everyone on numbers we never revisited.</p>
+<p style="clear:both;text-align:center;font:24px var(--font-body);color:var(--color-accent-text);margin:var(--space-6) 0">❧</p>
+</div>
+</div>
+<aside class="article-aside">
+<h3 style="margin:0">In this issue</h3>
+<div class="rule-dotted"></div>
+<a class="story-link" href="#"><div class="kicker">Research</div><div class="headline headline-sm" style="margin-top:4px">Discovery isn’t a phase</div><div class="byline" style="font-size:14px">By Ishita Bose</div></a>
+<div class="rule-dotted"></div>
+<a class="story-link" href="#"><div class="kicker">Measurement</div><div class="headline headline-sm" style="margin-top:4px">Nobody can explain the denominator</div><div class="byline" style="font-size:14px">By Grace Liu</div></a>
+<div class="rule-dotted"></div>
+<a class="story-link" href="#"><div class="kicker">Hiring</div><div class="headline headline-sm" style="margin-top:4px">We stopped asking for case studies</div><div class="byline" style="font-size:14px">By Aditya Menon</div></a>
+<div class="notice" style="margin-top:var(--space-6)"><div class="notice-text"><div class="kicker kicker-ink">Circulation</div><div class="notice-body">Passed along 4 times across PM Collective and Product Chai.</div></div></div>
+</aside>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;edition&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;day&quot;,&quot;night&quot;],&quot;default&quot;:&quot;day&quot;,&quot;tsType&quot;:&quot;'day'|'night'&quot;}}">
+class Component extends DCLogic {
+  rootRef = React.createRef();
+  componentDidMount() { this.sync(); }
+  componentDidUpdate() { this.sync(); }
+  sync() { const el = this.rootRef.current; if (el) el.setAttribute('data-edition', this.props.edition === 'night' ? 'night' : 'day'); }
+  renderVals() { return { rootRef: this.rootRef }; }
+}
+</script>
+</body>
+</html>

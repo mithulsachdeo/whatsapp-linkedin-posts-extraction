@@ -33,7 +33,11 @@ import {
 } from '../review/shortLink.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const INDUSTRY_DIR = path.join(__dirname, '..', '..', 'Industry');
+// The visual source of truth is the "Magazine Old Newspaper" design system in
+// Industry_new2. Served as-is (styles.css @imports its token files, which
+// resolve relative to /assets/styles.css), so retuning the tokens needs no
+// build step.
+const INDUSTRY_DIR = path.join(__dirname, '..', '..', 'Industry_new2');
 
 /**
  * Builds the Express app. HTTP is the secondary test seam: routes are kept

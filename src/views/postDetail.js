@@ -1,36 +1,41 @@
 import { esc } from './layout.js';
 
 /**
- * Renders the post detail view (ticket #8): the cached preview (or a
- * URL-only "no preview" block when none was fetched), Open-on-LinkedIn and
- * Copy-link actions, and the full sharing history -- each event's sharer
- * (resolved display name, or the raw sender labelled "Pending attribution"),
- * timestamp, group (admin-only per the group-hidden rule), optional note,
- * and a "First shared" marker on the earliest event. Adapted from
- * Industry/templates/postboard/Postboard.dc.html's `isPost` screen.
+ * Renders the post detail view (ticket #8) in the Industry_new2 article idiom:
+ * a kicker + headline, the cached preview as drop-capped body (or a URL-only
+ * "no preview" block when none was fetched), Open-on-LinkedIn / Copy-link
+ * actions, and the full "Circulation record" -- each event's sharer (resolved
+ * display name, or the raw sender labelled "Pending attribution"), timestamp,
+ * group (admin-only per the group-hidden rule), optional note, and a "First
+ * shared" marker on the earliest event.
  * @param {object} post - see getPostDetail's return shape (src/query/dashboard.js)
  * @param {{ isAdmin: boolean }} params
  */
 export function renderPostDetail(post, { isAdmin }) {
   const title = post.previewAuthor || 'Preview unavailable';
-  const preview = post.previewAuthor || post.previewExcerpt ? renderPreview(post) : renderNoPreview(post.url);
+  const hasPreview = Boolean(post.previewAuthor || post.previewExcerpt);
+  const preview = hasPreview ? renderPreview(post) : renderNoPreview(post.url);
 
   return `
-    <a class="btn btn-ghost" href="/" style="margin-bottom:var(--space-4);display:inline-flex;align-items:center;gap:6px;text-decoration:none">&larr; All posts</a>
-    <div style="display:flex;flex-wrap:wrap;gap:var(--space-8);align-items:flex-start">
-      <article style="flex:1 1 420px;min-width:0;max-width:640px">
-        <h1 style="font-size:36px;margin-bottom:4px" data-testid="post-detail-title">${esc(title)}</h1>
-        ${post.previewRole ? `<p style="color:var(--color-neutral-700);margin-bottom:var(--space-4)">${esc(post.previewRole)}</p>` : ''}
-        ${preview}
-        <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-4);align-items:center">
-          <a class="btn btn-primary" href="${esc(post.url)}" target="_blank" rel="noopener" style="padding:11px 20px" data-testid="open-on-linkedin">Open on LinkedIn<svg width="15" height="15" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>
-          <button type="button" class="btn btn-secondary" style="padding:11px 20px" data-testid="copy-link" data-url="${esc(post.url)}" onclick="navigator.clipboard.writeText(this.dataset.url);this.textContent='Link copied';setTimeout(()=>{this.textContent='Copy link';},2000);">Copy link</button>
+    <a class="btn btn-link" href="/" style="margin-bottom:var(--space-3)">← Back to the front page</a>
+    <div class="article">
+      <div class="article-main">
+        <div class="kicker">From the archive</div>
+        <h1 class="headline headline-xl" data-testid="post-detail-title">${esc(title)}</h1>
+        <div class="article-byline">
+          ${post.previewRole ? `<span class="byline">${esc(post.previewRole)}</span>` : ''}
+          <span style="font-style:italic;color:var(--color-muted);font-family:var(--font-body)">Originally published on LinkedIn</span>
         </div>
-      </article>
-      <aside style="flex:1 1 320px;min-width:0;max-width:440px">
-        <h3 style="margin-bottom:4px" data-testid="share-history-title">${esc(sharedTitle(post.shareCount))}</h3>
-        <p style="color:var(--color-neutral-700);font-size:14px;margin-bottom:var(--space-4)">${esc(sharedSub(post))}</p>
-        <ol style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--space-4)" data-testid="share-history">
+        ${preview}
+        <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-6);align-items:center">
+          <a class="btn btn-ink" href="${esc(post.url)}" data-testid="open-on-linkedin" target="_blank" rel="noopener">Read the original on LinkedIn ↗</a>
+          <button type="button" class="btn" data-testid="copy-link" data-url="${esc(post.url)}" onclick="navigator.clipboard.writeText(this.dataset.url);this.textContent='Link copied';setTimeout(()=>{this.textContent='Copy link';},2000);">Copy link</button>
+        </div>
+      </div>
+      <aside class="article-aside">
+        <h3 class="headline headline-md" style="margin:0" data-testid="share-history-title">${esc(sharedTitle(post.shareCount))}</h3>
+        <p class="standfirst" style="font-size:var(--text-sm);margin:2px 0 var(--space-4)">${esc(sharedSub(post))}</p>
+        <ol style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column" data-testid="share-history">
           ${post.shares.map((share) => renderShare(share, isAdmin)).join('')}
         </ol>
       </aside>
@@ -39,10 +44,9 @@ export function renderPostDetail(post, { isAdmin }) {
 }
 
 function renderPreview(post) {
+  const body = post.previewExcerpt || '';
   return `
-    <div style="background:var(--color-surface);border-radius:var(--radius-lg);padding:var(--space-6);font-size:16px;line-height:1.6;text-wrap:pretty" data-testid="post-preview">
-      <p style="margin:0">${esc(post.previewExcerpt || '')}</p>
-    </div>
+    <p class="article-body dropcap" data-testid="post-preview">${esc(body)}</p>
   `;
 }
 
@@ -50,9 +54,9 @@ function renderPreview(post) {
 // URL-only "no preview" style -- never hidden.
 function renderNoPreview(url) {
   return `
-    <div style="background:var(--color-surface);border-radius:var(--radius-lg);padding:var(--space-6);font-size:16px;line-height:1.6;text-wrap:pretty" data-testid="post-preview" data-preview-state="unavailable">
-      <p style="margin:0 0 var(--space-2);font-weight:600">LinkedIn didn't return a preview for this post.</p>
-      <p style="margin:0;color:var(--color-neutral-700);word-break:break-all;font-size:14px">${esc(url)}</p>
+    <div data-testid="post-preview" data-preview-state="unavailable">
+      <p class="standfirst" style="margin:0 0 var(--space-2)">LinkedIn didn't return a preview for this post, so only the link was printed.</p>
+      <p class="dateline" style="margin:0;word-break:break-all">${esc(url)}</p>
     </div>
   `;
 }
@@ -62,50 +66,34 @@ function sharedTitle(shareCount) {
 }
 
 function sharedSub(post) {
-  if (!post.firstSharedAt) return '';
+  if (!post.firstSharedAt) return 'Circulation record';
   const first = formatDate(post.firstSharedAt);
   const last = formatDate(post.lastSharedAt);
   return first === last ? `On ${first}.` : `Between ${first} and ${last}.`;
 }
 
 function renderShare(share, isAdmin) {
-  const avatar = share.displayName
-    ? `<span style="width:36px;height:36px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-size:12px;font-weight:700">${esc(initials(share.displayName))}</span>`
-    : `<span style="width:36px;height:36px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px dashed var(--color-neutral-600);color:var(--color-neutral-700);font-size:13px;font-weight:700">?</span>`;
-
   // Spec: sharer shown by name when resolved, otherwise the raw sender
   // string labelled "Pending attribution" -- never fuzzily guessed.
   const name = share.displayName || share.rawSender;
-  // Group is admin-only per the group-hidden rule: the query always
-  // returns it, but a public visitor never sees it.
-  const groupLabel = isAdmin ? ` · ${esc(share.groupName)}` : '';
+  // Group is admin-only per the group-hidden rule: the query always returns
+  // it, but a public visitor never sees it.
+  const groupLabel = isAdmin ? esc(share.groupName) : '';
 
   return `
-    <li style="display:flex;gap:var(--space-3);align-items:flex-start" data-testid="share-event">
-      ${avatar}
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center">
-          <span style="font-weight:700">${esc(name)}</span>
-          ${!share.displayName ? '<span class="tag tag-accent-2">Pending attribution</span>' : ''}
-          ${share.isFirstShare ? '<span class="tag tag-accent" data-testid="first-shared-tag">First shared</span>' : ''}
-        </div>
-        <div style="font-size:13px;color:var(--color-neutral-700)">${esc(formatDateTime(share.timestamp))}${groupLabel}</div>
-        ${share.note ? `<p style="margin:6px 0 0;font-size:14px;padding:8px 14px;background:var(--color-neutral-100);border-radius:var(--radius-md);max-width:44ch">&ldquo;${esc(share.note)}&rdquo;</p>` : ''}
+    <li style="padding:var(--space-3) 0;border-bottom:1px dotted var(--color-neutral-600)" data-testid="share-event">
+      <div style="display:flex;justify-content:space-between;gap:var(--space-2);font:700 var(--text-xs)/1.3 var(--font-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--color-muted)">
+        <span>${esc(formatDateTime(share.timestamp))}</span>
+        ${groupLabel ? `<span>${groupLabel}</span>` : ''}
       </div>
+      <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:4px">
+        <span class="headline headline-sm">${esc(name)}</span>
+        ${!share.displayName ? '<span class="tag tag-dashed">Pending attribution</span>' : ''}
+        ${share.isFirstShare ? '<span class="tag tag-red" data-testid="first-shared-tag">First shared</span>' : ''}
+      </div>
+      ${share.note ? `<p style="font:italic var(--text-base)/1.45 var(--font-body);margin:6px 0 0;padding-left:12px;border-left:3px solid var(--color-accent)">“${esc(share.note)}”</p>` : ''}
     </li>
   `;
-}
-
-function initials(name) {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((word) => word[0])
-      .join('')
-      .toUpperCase() || '?'
-  );
 }
 
 function formatDate(iso) {

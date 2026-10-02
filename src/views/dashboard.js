@@ -1,13 +1,12 @@
 import { esc } from './layout.js';
 
 /**
- * Renders the dashboard body: the "No posts yet" empty state (adapted from
- * Industry/components/postboard-empty-states.html) when the whole board has
- * no data at all; otherwise the discovery controls (search, sort, density,
- * filter-by-member) from Industry/templates/postboard/ plus the post list in
- * rows or cards density (adapted from Industry/components/postboard-post-row.html
- * and postboard-member-filter.html). Group is never shown, per the finalized
- * group-hidden decision.
+ * Renders the dashboard body in the Industry_new2 "front page" idiom: the
+ * first-run empty state ("No posts yet") when the board has no data at all;
+ * otherwise the discovery controls (search, order, layout, filter-by-member)
+ * plus the post list -- rows render as a ruled newspaper index, cards as
+ * column stories -- and a "Correspondents" rail. Group is never shown, per the
+ * group-hidden decision (D1).
  * @param {{ posts: Array<object> }} data
  * @param {{
  *   isAdmin: boolean,
@@ -28,7 +27,7 @@ export function renderDashboard(
   }
 
   const state = { search, sort, density, activeMember };
-  const sidebar = renderMemberSidebar(filterOptions, activeMember, state);
+  const rail = renderCorrespondentsRail(filterOptions, activeMember, state);
   const header = renderHeader(activeMember, posts.length);
   const controls = renderControls(state, filterOptions, activeMember);
   const results =
@@ -37,18 +36,25 @@ export function renderDashboard(
   return `
     <style>
       [data-testid="member-select"] { display: none; }
+      .np-toggle { display:flex; gap:var(--space-3); align-items:center; }
+      .np-toggle > span { font:600 var(--text-xs)/1.3 var(--font-ui); letter-spacing:.12em; text-transform:uppercase; color:var(--color-muted); }
+      .np-toggle label { position:relative; font:600 12px/1.2 var(--font-ui); letter-spacing:.12em; text-transform:uppercase; color:var(--color-muted); padding:4px 0; border-bottom:2px solid transparent; cursor:pointer; }
+      .np-toggle label:hover { color:var(--color-accent-text); }
+      .np-toggle label:has(input:checked) { color:var(--color-text); font-weight:800; border-bottom-color:var(--color-accent); }
+      .np-toggle input { position:absolute; opacity:0; width:0; height:0; }
+      .np-toggle input:focus-visible + span { outline:2px solid var(--color-accent); outline-offset:3px; }
       @media (max-width: 760px) {
-        [data-testid="member-sidebar"] { display: none; }
+        [data-testid="member-rail"] { display: none; }
         [data-testid="member-select"] { display: block; }
       }
     </style>
     <div style="display:flex;flex-wrap:wrap;gap:var(--space-8);align-items:flex-start">
-      ${sidebar}
-      <section style="flex:1 1 480px;min-width:0">
+      <section style="flex:999 1 520px;min-width:0">
         ${header}
         ${controls}
         ${results}
       </section>
+      ${rail}
     </div>
   `;
 }
@@ -58,10 +64,9 @@ function renderPostList(posts, density) {
 }
 
 // Builds a /?… href carrying forward the current search/sort/density/member
-// state, so switching one control (e.g. sort) never silently drops another
-// (e.g. an in-progress search). `overrides` wins over `state` per key;
-// `overrides.member === ''` explicitly clears the member filter (the
-// "Everyone" / "All posts" link).
+// state, so switching one control never silently drops another. `overrides`
+// wins over `state` per key; `overrides.member === ''` explicitly clears the
+// member filter (the "Everyone" link).
 function buildHref(state, overrides = {}) {
   const merged = { ...state, ...overrides };
   const params = new URLSearchParams();
@@ -84,18 +89,21 @@ function memberParamFor(activeMember) {
 function renderHeader(activeMember, resultCount) {
   if (!activeMember) {
     return `
-      <h1 style="font-size:40px;max-width:18ch;margin-bottom:var(--space-3)">Every post the groups shared</h1>
+      <div class="kicker">The front page</div>
+      <h1 class="headline headline-xl" style="margin:var(--space-2) 0 var(--space-4);max-width:18ch">Every post the groups shared</h1>
     `;
   }
 
-  const backLink = (state) =>
-    `<a class="btn btn-ghost" href="${buildHref(state, { member: '' })}" style="margin-bottom:var(--space-3);display:inline-flex;align-items:center;gap:6px;text-decoration:none">&larr; All posts</a>`;
+  const backLink = (st) =>
+    `<a class="btn btn-link" href="${buildHref(st, { member: '' })}" style="margin-bottom:var(--space-3)">← Back to the front page</a>`;
 
   if (activeMember.type === 'pending') {
     return `
       ${backLink({ activeMember })}
-      <h1 style="font-size:36px;margin-bottom:var(--space-2)">Pending attribution</h1>
-      <p style="max-width:58ch;color:var(--color-neutral-700);margin:0">Posts with at least one share from a sender who isn't matched to a member yet. They're counted normally; only the name is waiting.</p>
+      <div class="kicker kicker-sepia">Byline pending</div>
+      <h1 class="headline headline-lg" style="margin:var(--space-2) 0 var(--space-2)">Pending attribution</h1>
+      <p class="standfirst" style="max-width:60ch">Posts with at least one share from a sender who isn't matched to a member yet. They're counted normally; only the name is waiting.</p>
+      <hr class="rule-double" />
     `;
   }
 
@@ -103,39 +111,51 @@ function renderHeader(activeMember, resultCount) {
   return `
     ${backLink({ activeMember })}
     <div style="display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap">
-      <span style="width:72px;height:72px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-family:var(--font-heading);font-size:26px">${esc(initials(activeMember.displayName))}</span>
+      <span style="width:72px;height:72px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-family:var(--font-display);font-size:28px">${esc(initials(activeMember.displayName))}</span>
       <div>
-        <h1 style="font-size:36px;margin-bottom:4px" data-testid="member-header-name">${esc(activeMember.displayName)}</h1>
-        <p style="margin:0;color:var(--color-neutral-700)">${resultCount} ${postWord} shared</p>
+        <div class="kicker">Correspondent's file</div>
+        <h1 class="headline headline-lg" style="margin:4px 0" data-testid="member-header-name">${esc(activeMember.displayName)}</h1>
+        <p class="standfirst" style="margin:0">${resultCount} ${postWord} passed along</p>
       </div>
     </div>
+    <hr class="rule-double" />
   `;
 }
 
 function renderControls(state, filterOptions, activeMember) {
-  const memberSelect = renderMemberSelect(filterOptions, activeMember, state);
+  const memberSelect = renderMemberSelect(filterOptions, activeMember);
+  const sortToggle = radioToggle('Order', 'sort', [
+    ['recent', 'Recent'],
+    ['most_shared', 'Most shared'],
+  ], state.sort, 'sort-toggle');
+  const densityToggle = radioToggle('Layout', 'density', [
+    ['rows', 'Index'],
+    ['cards', 'Columns'],
+  ], state.density, 'density-toggle');
+
   return `
-    <form method="get" action="/" data-testid="dashboard-controls" style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center;margin:var(--space-6) 0 var(--space-3)">
+    <form method="get" action="/" data-testid="dashboard-controls" style="display:flex;flex-wrap:wrap;gap:var(--space-4) var(--space-6);align-items:flex-end;padding-bottom:var(--space-3);margin-bottom:var(--space-4);border-bottom:1px solid var(--color-text)">
       ${memberParamFor(activeMember) ? `<input type="hidden" name="member" value="${esc(memberParamFor(activeMember))}">` : ''}
-      <div style="position:relative;flex:1 1 260px;min-width:0">
-        <svg width="17" height="17" viewBox="0 0 24 24" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);fill:none;stroke:var(--color-neutral-700);stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round;pointer-events:none"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-        <input class="input" type="search" name="q" placeholder="Search posts, authors or members" value="${esc(state.search)}" style="padding-left:40px;min-height:42px;width:100%">
-      </div>
-      <div class="seg" role="radiogroup" aria-label="Sort" data-testid="sort-toggle">
-        <label class="seg-opt"><input type="radio" name="sort" value="recent" onchange="this.form.requestSubmit()" ${state.sort === 'recent' ? 'checked' : ''}>Recent</label>
-        <label class="seg-opt"><input type="radio" name="sort" value="most_shared" onchange="this.form.requestSubmit()" ${state.sort === 'most_shared' ? 'checked' : ''}>Most shared</label>
-      </div>
-      <div class="seg" role="radiogroup" aria-label="Density" data-testid="density-toggle">
-        <label class="seg-opt"><input type="radio" name="density" value="rows" onchange="this.form.requestSubmit()" ${state.density === 'rows' ? 'checked' : ''}>Rows</label>
-        <label class="seg-opt"><input type="radio" name="density" value="cards" onchange="this.form.requestSubmit()" ${state.density === 'cards' ? 'checked' : ''}>Cards</label>
-      </div>
+      <input class="input" type="search" name="q" placeholder="Search the archive…" value="${esc(state.search)}" aria-label="Search posts" style="flex:1 1 240px;min-width:0">
+      ${sortToggle}
+      ${densityToggle}
       ${memberSelect}
-      <button type="submit" class="btn btn-secondary" style="padding:6px 14px">Apply</button>
+      <button type="submit" class="btn btn-sm">Apply</button>
     </form>
   `;
 }
 
-function renderMemberSelect(filterOptions, activeMember, state) {
+function radioToggle(label, name, options, current, testid) {
+  const opts = options
+    .map(
+      ([value, text]) =>
+        `<label><input type="radio" name="${name}" value="${value}" onchange="this.form.requestSubmit()" ${current === value ? 'checked' : ''}><span>${text}</span></label>`
+    )
+    .join('');
+  return `<div class="np-toggle" role="radiogroup" aria-label="${label}" data-testid="${testid}"><span>${label}</span>${opts}</div>`;
+}
+
+function renderMemberSelect(filterOptions, activeMember) {
   const options = [
     `<option value="" ${!activeMember ? 'selected' : ''}>Everyone (${filterOptions.totalCount})</option>`,
     ...filterOptions.members.map(
@@ -148,28 +168,24 @@ function renderMemberSelect(filterOptions, activeMember, state) {
       `<option value="pending" ${activeMember?.type === 'pending' ? 'selected' : ''}>Pending attribution (${filterOptions.pendingCount})</option>`
     );
   }
-  // Narrow-viewport replacement for the sidebar (per the design's member
-  // filter component: "Below 760px the list collapses into a single
-  // select.input"). name="member" on this select deliberately shadows/
-  // replaces the hidden input of the same name the form may also render.
-  return `<select data-testid="member-select" class="input" name="member" onchange="this.form.requestSubmit()" style="min-height:42px;flex:1 1 180px">${options.join('')}</select>`;
+  // Narrow-viewport replacement for the correspondents rail. name="member"
+  // deliberately shadows the hidden input of the same name the form may render.
+  return `<select data-testid="member-select" class="input" name="member" aria-label="Filter by correspondent" onchange="this.form.requestSubmit()" style="flex:1 1 180px">${options.join('')}</select>`;
 }
 
-function renderMemberSidebar(filterOptions, activeMember, state) {
+function renderCorrespondentsRail(filterOptions, activeMember, state) {
   const items = [
     {
       href: buildHref(state, { member: '' }),
       label: 'Everyone',
       count: filterOptions.totalCount,
       active: !activeMember,
-      kind: 'everyone',
     },
     ...filterOptions.members.map((m) => ({
       href: buildHref(state, { member: String(m.id) }),
       label: m.displayName,
       count: m.postCount,
       active: activeMember?.type === 'member' && activeMember.id === m.id,
-      kind: 'member',
     })),
   ];
   if (filterOptions.pendingCount > 0) {
@@ -178,37 +194,30 @@ function renderMemberSidebar(filterOptions, activeMember, state) {
       label: 'Pending attribution',
       count: filterOptions.pendingCount,
       active: activeMember?.type === 'pending',
-      kind: 'pending',
     });
   }
 
-  const rows = items.map(memberFilterRow).join('');
+  const rows = items.map(correspondentRow).join('');
   return `
-    <aside data-testid="member-sidebar" style="flex:0 0 220px;position:sticky;top:var(--space-6);padding-top:var(--space-2)">
-      <h6 style="color:var(--color-neutral-700);margin-bottom:var(--space-3);font-family:var(--font-body);font-weight:700">Shared by</h6>
-      <div style="display:flex;flex-direction:column;gap:2px">${rows}</div>
+    <aside data-testid="member-rail" style="flex:1 1 220px;max-width:280px;min-width:0;position:sticky;top:var(--space-6);border-top:var(--rule-heavy) solid var(--color-text);padding-top:var(--space-3)">
+      <h3 class="headline headline-sm" style="margin:0">Correspondents</h3>
+      <p class="standfirst" style="font-size:var(--text-sm);margin:0 0 var(--space-3)">Who passed along what. Select a name to read their file.</p>
+      <div style="display:flex;flex-direction:column">${rows}</div>
     </aside>
   `;
 }
 
-function memberFilterRow({ href, label, count, active, kind }) {
-  const activeStyle = active ? 'background:var(--color-accent-200);color:var(--color-accent-900);font-weight:600' : '';
+function correspondentRow({ href, label, count, active }) {
+  const nameStyle = active
+    ? 'color:var(--color-accent-800);font-weight:700'
+    : 'color:var(--color-text)';
+  const marker = active ? '▸ ' : '';
   return `
-    <a href="${href}" aria-current="${active}" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:10px;padding:5px 12px 5px 5px;border-radius:999px;font-size:14px;${activeStyle}">
-      ${memberAvatar(label, kind)}
-      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label)}</span>
-      <span style="font-size:12px">${count}</span>
+    <a href="${href}" aria-current="${active}" style="text-decoration:none;font:var(--text-base)/1.3 var(--font-ui);display:flex;align-items:baseline;gap:6px;padding:6px 0;${nameStyle}">
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${marker}${esc(label)}</span>
+      <span style="flex:1;border-bottom:1.5px dotted var(--color-neutral-500);transform:translateY(-4px)"></span>
+      <span style="font-family:var(--font-mono)">${count}</span>
     </a>`;
-}
-
-function memberAvatar(label, kind) {
-  if (kind === 'pending') {
-    return `<span style="width:26px;height:26px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1.5px dashed var(--color-neutral-600);color:var(--color-neutral-700);font-size:12px;font-weight:700">?</span>`;
-  }
-  if (kind === 'everyone') {
-    return `<span style="width:26px;height:26px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--color-neutral-300);color:var(--color-neutral-800);font-size:10px;font-weight:700">All</span>`;
-  }
-  return `<span style="width:26px;height:26px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-size:10px;font-weight:700">${esc(initials(label))}</span>`;
 }
 
 function initials(name) {
@@ -226,100 +235,86 @@ function initials(name) {
 function renderNoResults(search, activeMember) {
   const title = search ? `No posts match “${esc(search)}”` : 'No posts for this filter';
   return `
-    <div data-testid="no-results" style="padding:var(--space-8) var(--space-4);display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2)">
-      <span style="width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--color-neutral-200);margin-bottom:var(--space-2)">
-        <svg width="24" height="24" viewBox="0 0 24 24" style="fill:none;stroke:var(--color-neutral-700);stroke-width:2.75;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-      </span>
-      <h3 style="margin:0">${title}</h3>
-      <p style="margin:0;color:var(--color-neutral-700);max-width:48ch">Try a different word, or clear the member filter.</p>
-      <a class="btn btn-secondary" href="/" data-testid="clear-filters" style="margin-top:var(--space-2);text-decoration:none">Clear search and filters</a>
+    <div data-testid="no-results" class="empty">
+      <div class="kicker">No stories filed</div>
+      <h2 class="headline headline-lg" style="margin:var(--space-2) 0">${title}</h2>
+      <p class="standfirst">Try another word, or clear the correspondent filter.</p>
+      <a class="btn" href="/" data-testid="clear-filters" style="margin-top:var(--space-2)">Clear search and filters</a>
     </div>
   `;
 }
 
+// Rows density: the ruled newspaper index. Each row links to the post detail.
 function renderRows(posts) {
-  const items = posts.map((post) => `<li style="list-style:none">${renderRow(post)}</li>`).join('');
-  return `<ul style="padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-2)" data-testid="post-list-rows">${items}</ul>`;
+  const rows = posts.map(indexRow).join('');
+  return `<div class="index" data-testid="post-list-rows">${rows}</div>`;
 }
 
-function renderRow(post) {
-  return `
-    <div style="display:flex;gap:var(--space-4);align-items:flex-start;padding:var(--space-3) var(--space-4);border-radius:var(--radius-lg);background:var(--color-surface)">
-      ${shareCountBadge(post)}
-      <div style="flex:1;min-width:0">
-        ${postHeadline(post)}
-        ${postExcerpt(post)}
-        ${postMeta(post)}
-      </div>
-    </div>`;
-}
-
-function renderCards(posts) {
-  const items = posts.map((post) => `<li style="list-style:none">${renderCard(post)}</li>`).join('');
-  return `<ul class="card-grid" style="padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--space-3)" data-testid="post-list-cards">${items}</ul>`;
-}
-
-function renderCard(post) {
-  return `
-    <div class="card" style="padding:var(--space-4);gap:var(--space-2);display:flex;flex-direction:column;height:100%">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-2)">
-        ${postHeadline(post)}
-        ${shareCountBadge(post, true)}
-      </div>
-      ${postExcerpt(post)}
-      ${postMeta(post)}
-    </div>`;
-}
-
-function shareCountBadge(post, small = false) {
-  const size = small ? 40 : 52;
-  return `
-    <div style="width:${size}px;height:${size}px;flex:none;border-radius:50%;background:var(--color-accent-200);color:var(--color-accent-800);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1">
-      <span style="font-family:var(--font-heading);font-size:${small ? 16 : 21}px">${post.shareCount}</span>
-      <span style="font-size:10px;margin-top:2px">${post.shareCount === 1 ? 'share' : 'shares'}</span>
-    </div>`;
-}
-
-function postHeadline(post) {
+function indexRow(post) {
   const title = post.previewAuthor || 'Preview unavailable';
-  // Links to the post detail view (ticket #8) rather than straight out to
-  // LinkedIn -- the detail page is where "Open on LinkedIn" lives, plus the
-  // full share history.
+  const count = post.shareCount;
+  const countClass = count === 1 ? ' is-single' : '';
   return `
-    <div style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;min-width:0">
-      <a href="/posts/${post.id}" style="font-weight:700;color:var(--color-text)">${esc(title)}</a>
-      ${post.previewRole ? `<span style="font-size:13px;color:var(--color-neutral-700)">${esc(post.previewRole)}</span>` : ''}
-    </div>`;
+    <a class="index-row" href="/posts/${post.id}">
+      <span class="index-no">${count === 1 ? '1×' : `${count}×`}</span>
+      <span style="min-width:0">
+        <span class="headline headline-sm" style="display:block">${esc(title)}</span>
+        ${post.previewRole ? `<span class="meta" style="display:block">${esc(post.previewRole)}</span>` : ''}
+        <span style="display:block;font:var(--text-sm)/1.45 var(--font-body);color:var(--color-neutral-800);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(post.previewExcerpt || post.url)}</span>
+        ${indexMeta(post)}
+      </span>
+      <span class="index-count${countClass}">${count}×</span>
+    </a>`;
 }
 
-function postExcerpt(post) {
-  const text = post.previewExcerpt || post.url;
-  return `<p style="margin:3px 0 8px;font-size:14px;color:${post.previewExcerpt ? 'inherit' : 'var(--color-neutral-700)'};display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(text)}</p>`;
-}
-
-function postMeta(post) {
+function indexMeta(post) {
   const dateRange = formatDateRange(post.firstSharedAt, post.lastSharedAt);
-  const sharerCount = post.distinctSharerCount === 1 ? '1 sharer' : `${post.distinctSharerCount} sharers`;
   return `
-    <div style="color:var(--color-neutral-700);display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12.5px">
-      <span>${sharerCount}</span>
-      ${dateRange ? `<span>${esc(dateRange)}</span>` : ''}
-      ${post.pendingAttribution ? '<span class="tag tag-accent-2">Pending attribution</span>' : ''}
-    </div>
-    ${sharedByLine(post.sharers)}`;
+    <span style="display:flex;flex-wrap:wrap;gap:2px 10px;align-items:center;font:var(--text-sm)/1.4 var(--font-ui);color:var(--color-muted);margin-top:4px">
+      ${sharedBy(post.sharers)}
+      ${dateRange ? `<span class="dateline">${esc(dateRange)}</span>` : ''}
+      ${post.pendingAttribution ? '<span class="tag tag-dashed">Pending attribution</span>' : ''}
+    </span>`;
+}
+
+// Cards density: column stories (CSS multi-column), each a block linking to
+// its detail page. No photos: the app carries no imagery.
+function renderCards(posts) {
+  const stories = posts.map(columnStory).join('');
+  return `<div class="columns" data-testid="post-list-cards">${stories}</div>`;
+}
+
+function columnStory(post) {
+  const title = post.previewAuthor || 'Preview unavailable';
+  const count = post.shareCount;
+  return `
+    <a class="story story-link" href="/posts/${post.id}" style="display:block">
+      <div class="kicker-row">
+        <span class="kicker">From the archive</span>
+        ${post.pendingAttribution ? '<span class="kicker kicker-sepia">Pending attribution</span>' : ''}
+      </div>
+      <h3 class="headline headline-md">${esc(title)}</h3>
+      ${post.previewRole ? `<div class="byline">${esc(post.previewRole)}</div>` : ''}
+      <p class="story-body">${esc(post.previewExcerpt || post.url)}</p>
+      <div class="story-foot meta">
+        ${sharedBy(post.sharers)}
+        <span class="dateline" style="white-space:nowrap">${esc(formatDateRange(post.firstSharedAt, post.lastSharedAt))}</span>
+      </div>
+      ${count > 1 ? `<div class="story-count">Shared ${count}×</div>` : ''}
+    </a>`;
 }
 
 // Shows the member display name AND the raw sender/phone for every sharer
 // (spec: acceptable while the deployment is internal-for-now). A sharer with
 // no resolved member shows the raw sender alone, labelled pending.
-function sharedByLine(sharers) {
+function sharedBy(sharers) {
   if (!sharers || sharers.length === 0) return '';
   const labels = sharers.map((s) =>
     s.displayName
       ? `${esc(s.displayName)} <span style="color:var(--color-neutral-600)">(${esc(s.rawSender)})</span>`
       : `${esc(s.rawSender)} <span style="color:var(--color-neutral-600)">(pending attribution)</span>`
   );
-  return `<div data-testid="shared-by" style="font-size:12px;color:var(--color-neutral-700);margin-top:2px">Shared by ${labels.join(', ')}</div>`;
+  return `<span data-testid="shared-by">Passed along by ${labels.join(', ')}</span>`;
 }
 
 function formatDateRange(firstSharedAt, lastSharedAt) {
@@ -336,21 +331,17 @@ function formatDate(iso) {
 
 function renderEmptyState({ isAdmin }) {
   const adminCopy = `
-    <p style="font-size:16px;max-width:46ch;text-wrap:pretty">Import a WhatsApp chat export and every LinkedIn post shared in it shows up here once, with who shared it and when.</p>
-    <a class="btn btn-primary" href="/import" style="padding:12px 22px;font-size:15px;display:inline-block;margin-top:var(--space-2)">Import a chat export</a>
+    <p class="standfirst" style="max-width:52ch">Bring in a WhatsApp chat export and every LinkedIn post shared in it is printed here once, with who passed it along and when.</p>
+    <a class="btn btn-ink" href="/import" style="margin-top:var(--space-4)">Import a chat export</a>
   `;
   const memberCopy = `
-    <p style="font-size:16px;max-width:46ch;text-wrap:pretty">No chats have been imported yet. Posts shared in the group will appear here after the admin's first import.</p>
+    <p class="standfirst" style="max-width:52ch">The presses are quiet. Posts shared in the groups will appear here after the admin brings in the first chat export.</p>
   `;
 
   return `
-    <div style="max-width:560px;padding:var(--space-8) 0">
-      <div style="display:flex;margin-bottom:var(--space-6)">
-        <span style="width:72px;height:72px;border-radius:50%;background:var(--color-accent-200)"></span>
-        <span style="width:72px;height:72px;border-radius:50%;background:var(--color-accent-2-200);margin-left:-22px"></span>
-        <span style="width:72px;height:72px;border-radius:50%;background:var(--color-neutral-300);margin-left:-22px"></span>
-      </div>
-      <h1 style="font-size:40px" data-testid="empty-state-title">No posts yet</h1>
+    <div class="empty anim-rise">
+      <div class="kicker">Stop the presses</div>
+      <h1 class="headline headline-xl" data-testid="empty-state-title" style="margin:var(--space-2) 0 var(--space-3)">No posts yet</h1>
       ${isAdmin ? adminCopy : memberCopy}
     </div>
   `;

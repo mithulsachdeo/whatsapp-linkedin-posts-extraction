@@ -1,6 +1,11 @@
 // Server-rendered HTML via template literals -- no templating-engine
 // dependency. Escaping is manual via `esc()`; keep every piece of
 // user/DB-sourced text run through it before interpolation.
+//
+// The shell is the "Magazine Old Newspaper" edition frame from Industry_new2:
+// the dateline/edition strip, the blackletter nameplate, the section nav and a
+// closing colophon. Group names are never printed anywhere in the chrome, per
+// the group-hidden decision (D1).
 
 export function esc(value) {
   if (value === null || value === undefined) return '';
@@ -17,12 +22,12 @@ export function esc(value) {
  */
 export function layout({ title, active, isAdmin, lastUpdated, body }) {
   const navLink = (href, key, label, extra = '') =>
-    `<a href="${href}" aria-current="${active === key ? 'page' : 'false'}">${label}${extra}</a>`;
+    `<a href="${href}"${active === key ? ' aria-current="page"' : ''}>${label}${extra}</a>`;
 
   const adminNav = isAdmin
     ? navLink('/import', 'import', 'Import') +
       navLink('/review', 'review', 'Review') +
-      `<form method="post" action="/logout" style="display:inline"><button type="submit" class="btn btn-secondary" style="padding:4px 12px">Logout</button></form>`
+      `<form method="post" action="/logout" style="display:inline;margin:0"><button type="submit">Logout</button></form>`
     : `<a href="/login">Admin</a>`;
 
   const lastUpdatedText = lastUpdated
@@ -37,16 +42,31 @@ export function layout({ title, active, isAdmin, lastUpdated, body }) {
 <title>${esc(title)} — Postboard</title>
 <link rel="stylesheet" href="/assets/styles.css" />
 </head>
-<body>
-<nav class="nav" style="flex-wrap:wrap;gap:var(--space-2) var(--space-4);padding:var(--space-4) var(--space-6)">
-<span class="nav-brand" style="display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border-radius:50%;background:var(--color-accent);display:inline-block"></span>Postboard</span>
-${navLink('/', 'posts', 'Posts')}
-${adminNav}
-<span style="margin-left:auto;font-size:13px;color:var(--color-neutral-700)" data-testid="last-updated">${lastUpdatedText}</span>
-</nav>
-<main style="padding:var(--space-4) var(--space-6) 80px;max-width:1180px">
+<body class="paper">
+<header style="padding:var(--space-4) var(--space-6) 0;max-width:1200px;margin:0 auto">
+  <div class="edition-strip">
+    <span>Shared once · Credited always</span>
+    <span data-testid="last-updated">${lastUpdatedText}</span>
+    <span>No engagement figures kept</span>
+  </div>
+  <div class="masthead-block anim-ink">
+    <h1 class="masthead-title">The Postboard</h1>
+    <p class="masthead-motto">Every LinkedIn post shared in the groups, printed once and credited to whoever passed it along</p>
+  </div>
+  <nav class="section-nav">
+    ${navLink('/', 'posts', 'Posts')}
+    ${adminNav}
+  </nav>
+</header>
+<main style="padding:var(--space-6) var(--space-6) 96px;max-width:1200px;margin:0 auto">
 ${body}
 </main>
+<footer style="padding:var(--space-3) var(--space-6) var(--space-8);max-width:1200px;margin:0 auto">
+  <div style="border-top:var(--rule-heavy) double var(--color-text);padding-top:var(--space-2);display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px var(--space-4);font:600 var(--text-xs)/1.4 var(--font-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--color-muted)">
+    <span>Printed from members' own chat exports</span>
+    <span>No engagement figures are kept</span>
+  </div>
+</footer>
 </body>
 </html>
 `;

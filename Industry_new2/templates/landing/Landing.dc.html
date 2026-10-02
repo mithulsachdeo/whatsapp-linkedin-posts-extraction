@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Landing" description="Product landing page set as a newspaper front page: masthead, wire ticker, headline hero with halftone photo, three numbered columns, a notice and a sign-up form" -->
+<helmet><script src="./ds-base.js"></script><script src="./image-slot.js"></script></helmet>
+<div ref="{{ rootRef }}" class="paper" style="min-height:100vh;font-family:var(--font-ui)">
+<div style="max-width:1200px;margin:0 auto;padding:0 var(--space-6) var(--space-16)">
+<header class="masthead">
+<div class="edition-strip"><span>Est. 2026</span><span>Thursday, 1 October 2026</span><span>Free for groups up to 500</span></div>
+<div class="masthead-block anim-ink"><h1 class="masthead-title">The Postboard</h1><p class="masthead-motto">The posts your group shares, kept in one place and credited to whoever shared them</p></div>
+<nav class="section-nav" aria-label="Sections"><a href="#how" aria-current="page">How it works</a><a href="#trust">What we keep</a><a href="#join">Start a board</a></nav>
+</header>
+<div class="wire" style="margin-top:var(--space-2)" aria-label="The wire"><span class="wire-label"><span class="wire-dot"></span>The wire</span><div class="wire-window"><div class="wire-track"><span><b>PM Collective</b> filed 2,140 messages · 12 links found</span><span><b>Product Chai</b> filed 3,902 messages · 8 new stories</span><span><b>Priya Sharma</b> passed along a post on roadmaps · shared 4×</span><span><b>Byline desk</b> matched 2 senders to members</span><span aria-hidden="true"><b>PM Collective</b> filed 2,140 messages · 12 links found</span><span aria-hidden="true"><b>Product Chai</b> filed 3,902 messages · 8 new stories</span><span aria-hidden="true"><b>Priya Sharma</b> passed along a post on roadmaps · shared 4×</span><span aria-hidden="true"><b>Byline desk</b> matched 2 senders to members</span></div></div></div>
+<section class="story-lead anim-press" style="margin-top:var(--space-8)">
+<div>
+<div class="kicker">Extra · For group admins</div>
+<h2 class="headline headline-xxl" style="margin:var(--space-2) 0 var(--space-4)">Good posts no longer get buried in the chat</h2>
+<p class="standfirst" style="margin-bottom:var(--space-6)">Import a WhatsApp chat export. Every LinkedIn post shared in it appears once on a public front page, with who shared it, when, and how many times.</p>
+<div style="display:flex;flex-wrap:wrap;gap:var(--space-2)"><a class="btn btn-ink" href="#join">Start a board</a><a class="btn" href="#how">See how it works</a></div>
+</div>
+<div class="story-lead-media">
+<figure class="figure"><div class="halftone" style="aspect-ratio:4/3"><image-slot id="landing-hero" shape="rect" placeholder="Drop a photo: people, a phone, a group chat"></image-slot></div><figcaption class="caption">Two WhatsApp groups, one record of everything they shared.</figcaption></figure>
+<div class="stamp anim-stamp" style="--delay:.8s"><span class="stamp-label">Printed</span><span class="stamp-count">1×</span><span class="stamp-label">only</span></div>
+</div>
+</section>
+<section id="how">
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:var(--space-4);flex-wrap:wrap;border-top:4px solid var(--color-text);padding-top:var(--space-3);margin-bottom:var(--space-6)"><h2 class="headline headline-lg">How it works</h2><span class="label">Three steps · about two minutes</span></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0">
+<article style="padding:0 var(--space-6) var(--space-4) 0"><div style="font:48px/1 var(--font-display);color:var(--color-accent-text)">I.</div><h3 class="headline headline-md" style="margin:var(--space-2) 0">Export the chat</h3><p style="font:16px/1.55 var(--font-body);margin:0">In WhatsApp, open the group, tap its name, then Export chat without media. You get one .txt or .zip.</p></article>
+<article style="padding:0 var(--space-6) var(--space-4);border-left:1px solid var(--color-rule)"><div style="font:48px/1 var(--font-display);color:var(--color-accent-text)">II.</div><h3 class="headline headline-md" style="margin:var(--space-2) 0">File it at the wire room</h3><p style="font:16px/1.55 var(--font-body);margin:0">Links are pulled out and de-duplicated across both groups. Messages already filed are skipped.</p></article>
+<article style="padding:0 0 var(--space-4) var(--space-6);border-left:1px solid var(--color-rule)"><div style="font:48px/1 var(--font-display);color:var(--color-accent-text)">III.</div><h3 class="headline headline-md" style="margin:var(--space-2) 0">Members read the front page</h3><p style="font:16px/1.55 var(--font-body);margin:0">Sort by latest or most shared, filter by who shared it, and search the archive.</p></article>
+</div>
+</section>
+<section id="trust" style="margin-top:var(--space-12);display:flex;flex-wrap:wrap;gap:var(--space-8);align-items:flex-start">
+<div style="flex:1 1 380px;min-width:0">
+<div class="kicker">What we keep</div>
+<h2 class="headline headline-lg" style="margin:var(--space-2) 0 var(--space-3)">Links, names and dates. Nothing else.</h2>
+<p style="font:17px/1.6 var(--font-body);max-width:56ch">The import reads each message, keeps the LinkedIn links, who sent them and when, and discards the rest of the chat. We don't track views or likes.</p>
+</div>
+<div class="notice notice-sepia" style="flex:1 1 320px"><div class="notice-text"><div class="kicker">Byline pending</div><div class="notice-body">If a sender only appears as a phone number, their shares still count. An admin matches them to a member when they're ready.</div></div></div>
+</section>
+<section id="join" style="margin-top:var(--space-12);border-top:4px double var(--color-text);padding-top:var(--space-6);display:flex;flex-wrap:wrap;gap:var(--space-8);align-items:flex-end">
+<div style="flex:1 1 360px;min-width:0"><div class="kicker">Start a board</div><h2 class="headline headline-xl" style="margin:var(--space-2) 0 0">Your group's first edition is one export away</h2></div>
+<sc-if value="{{ notSent }}" hint-placeholder-val="{{ true }}">
+<form onSubmit="{{ submit }}" style="flex:1 1 360px;min-width:0;display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:flex-end">
+<div class="field" style="flex:1 1 220px"><label for="landing-email">Work email</label><input id="landing-email" class="input" type="email" required placeholder="you@company.com"></div>
+<button class="btn btn-ink" type="submit">Start a board</button>
+</form>
+</sc-if>
+<sc-if value="{{ sent }}"><div class="notice" style="flex:1 1 360px"><div class="notice-text"><div class="kicker kicker-ink">Received</div><div class="notice-body">Check your inbox for a link to your board's wire room.</div></div></div></sc-if>
+</section>
+<footer style="margin-top:var(--space-16);border-top:4px double var(--color-text);padding-top:var(--space-2);display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px var(--space-4)" class="label"><span>The Postboard</span><span>No engagement figures are kept</span></footer>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;edition&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;day&quot;,&quot;night&quot;],&quot;default&quot;:&quot;day&quot;,&quot;tsType&quot;:&quot;'day'|'night'&quot;}}">
+class Component extends DCLogic {
+  state = { sent: false };
+  rootRef = React.createRef();
+  componentDidMount() { this.sync(); }
+  componentDidUpdate() { this.sync(); }
+  sync() { const el = this.rootRef.current; if (el) el.setAttribute('data-edition', this.props.edition === 'night' ? 'night' : 'day'); }
+  renderVals() {
+    return { rootRef: this.rootRef, sent: this.state.sent, notSent: !this.state.sent, submit: e => { e.preventDefault(); this.setState({ sent: true }); } };
+  }
+}
+</script>
+</body>
+</html>

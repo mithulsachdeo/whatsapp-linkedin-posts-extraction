@@ -1,0 +1,23 @@
+<!-- @dsCard group="Components" viewport="1100x900" name="Stories" subtitle="Lead story, column stories, index rows, stamp, halftone, tags" -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stories</title>
+<link rel="stylesheet" href="../../styles.css"><script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script><script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script><script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script><script src="../../_ds_bundle.js"></script>
+<style>body{padding:24px}.lbl{font:600 10.5px/1 var(--font-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--color-muted);margin:0 0 8px}.stack{display:flex;flex-direction:column;gap:24px}.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}</style>
+</head><body class="paper"><div id="root"></div>
+<script type="text/babel">
+const NS = window.Industry_indust;
+const { LeadStory, ColumnStory, IndexRow, Tag } = NS;
+function Demo(){return(<div className="stack">
+<LeadStory kicker="Lead story · Most shared" pending headline="Most roadmaps fail because nobody agreed on what ‘done’ means" standfirst="Three questions I now ask before anything goes on the board, and the one I dropped." byline="By Maya Fernandes, Head of Product, Fintech" meta="Passed along by Priya Sharma + 3 others · 26 Sep – 29 Sep" image="../../assets/photo.jpg" caption="Maya Fernandes." count={4} onOpen={()=>{}} />
+<div className="columns">
+<ColumnStory kicker="PM Collective" headline="We killed our NPS survey" body="Here is what we replaced it with, and why our retention conversations got noticeably better within one quarter." byline="By Tom Okafor, Product Lead" meta="Passed along by Karan Mehta + 1" date="30 Sep" count={2} onOpen={()=>{}} />
+<ColumnStory kicker="Product Chai" headline="Discovery isn’t a phase" body="A thread on the weekly rituals that kept our team close to patients for two years, including the ones that failed." byline="By Ishita Bose, PM" meta="Passed along by Shreya Nair" date="29 Sep" onOpen={()=>{}} />
+<ColumnStory kicker="Product Chai" pending headline="A post without a preview" body="linkedin.com/posts/raghav-p_activity-7245119038" meta="Passed along by ~ Sid" date="28 Sep" onOpen={()=>{}} />
+</div>
+<div className="index">
+<IndexRow no="01" headline="The PRD template I wish I had as a first-time PM" byline="By Daniel Kim, VP Product" meta="Passed along by Ananya Rao + 4 others · 18–25 Sep" count={5} onOpen={()=>{}} />
+<IndexRow no="02" headline="Your metrics dashboard is lying if no one can explain the denominator" byline="By Grace Liu" meta="Passed along by Arjun Das · 30 Sep" pending count={1} onOpen={()=>{}} />
+</div>
+<div className="row"><Tag>PM Collective</Tag><Tag tone="red">First edition</Tag><Tag tone="sepia">Product Chai</Tag><Tag tone="dashed">Byline pending</Tag><Tag tone="solid">New</Tag></div>
+</div>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script></body></html>

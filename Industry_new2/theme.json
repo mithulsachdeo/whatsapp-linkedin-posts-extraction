@@ -1,0 +1,57 @@
+{
+  "name": "Magazine Old Newspaper",
+  "palette": {
+    "band": "light",
+    "bg": "#f3ecdc",
+    "surface": "#faf6ec",
+    "text": "#1b1a17",
+    "accent": "#b3402c",
+    "accent2": "#9c7c40",
+    "night": {
+      "bg": "#17150f",
+      "text": "#ece4d2"
+    }
+  },
+  "fonts": {
+    "masthead": {
+      "family": "UnifrakturMaguntia",
+      "weights": [
+        400
+      ]
+    },
+    "heading": {
+      "family": "Libre Caslon Display",
+      "weights": [
+        400
+      ]
+    },
+    "body": {
+      "family": "Newsreader",
+      "weights": [
+        400,
+        600
+      ]
+    },
+    "ui": {
+      "family": "Libre Franklin",
+      "weights": [
+        400,
+        600,
+        700,
+        800
+      ]
+    },
+    "mono": {
+      "family": "Courier Prime",
+      "weights": [
+        400,
+        700
+      ]
+    }
+  },
+  "radius": 0,
+  "layoutStyle": "columns",
+  "imageTreatment": "halftone-sepia",
+  "iconSet": "typographic-glyphs + lucide-1.5",
+  "motion": "full"
+}

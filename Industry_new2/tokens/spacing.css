@@ -1,0 +1,7 @@
+:root{
+--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--space-8:32px;--space-10:40px;--space-12:48px;--space-16:64px;
+--radius-0:0;--radius-sm:2px;--radius-md:2px;--radius-lg:2px;--radius-round:50%;
+--rule-hair:1px;--rule-mid:1.5px;--rule-heavy:4px;
+--shadow-sm:0 1px 0 var(--color-rule);--shadow-md:3px 3px 0 var(--color-text);--shadow-lg:6px 6px 0 var(--color-text);--shadow-press:4px 4px 0 var(--color-text);
+--column-min:240px;--column-gap:var(--space-8);--page-pad:var(--space-6);
+}

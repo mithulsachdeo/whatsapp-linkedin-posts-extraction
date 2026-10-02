@@ -1,0 +1,23 @@
+<!-- @dsCard group="Components" viewport="1000x980" name="Feedback" subtitle="Notices, toast, dialog, empty state, press progress" -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Feedback</title>
+<link rel="stylesheet" href="../../styles.css"><script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script><script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script><script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script><script src="../../_ds_bundle.js"></script>
+<style>body{padding:24px}.lbl{font:600 10.5px/1 var(--font-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--color-muted);margin:0 0 8px}.stack{display:flex;flex-direction:column;gap:24px}.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}</style>
+</head><body class="paper"><div id="root"></div>
+<script type="text/babel">
+const NS = window.Industry_indust;
+const { Notice, Toast, Dialog, EmptyState, PressProgress, Button } = NS;
+function Demo(){const [p,setP]=React.useState(1);React.useEffect(()=>{const t=setInterval(()=>setP(x=>(x+1)%4),1800);return()=>clearInterval(t);},[]);return(<div className="stack">
+<div className="stack" style={{gap:16}}>
+<Notice label="Press note">14 stories from 37 shares. Each post is printed once, however often it was shared.</Notice>
+<Notice tone="sepia" label="Byline notice" action={<Button size="sm">Open the byline desk</Button>}>2 senders couldn't be matched to a member. Their shares are counted under the raw WhatsApp name.</Notice>
+<Notice tone="red" label="Could not file">This file isn't a WhatsApp export. Export the chat again without media.</Notice>
+</div>
+<Toast label="Correction" actionLabel="Undo">+91 98450 •••10 is Ananya Rao. Their shares now carry this byline.</Toast>
+<PressProgress title="Setting type · WhatsApp Chat with Product Chai.zip" steps={['Reading 6,214 messages','Finding LinkedIn links','Setting aside 22 already printed','Matching senders to members']} current={p} percent={p*25+12} />
+<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:32,alignItems:'start'}}>
+<EmptyState kicker="Stop the presses" title="Today's edition hasn't gone to press" action={<Button variant="ink">File the first chat export</Button>}>Bring in a WhatsApp chat export and every LinkedIn post in it is printed here once.</EmptyState>
+<div style={{position:'relative',height:300,transform:'translateZ(0)',overflow:'hidden'}}><Dialog kicker="Wire room" title="Remove this import?" onClose={()=>{}} actions={<><Button variant="link">Keep it</Button><Button variant="red">Remove import</Button></>}>Its 9 new stories leave the front page. Shares already counted from other imports stay.</Dialog></div>
+</div>
+</div>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script></body></html>

@@ -1,0 +1,15 @@
+<!-- @dsCard group="Components" viewport="1100x820" name="Article" subtitle="Article page with drop cap, pull quote and side column" -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Article</title>
+<link rel="stylesheet" href="../../styles.css"><script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script><script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script><script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script><script src="../../_ds_bundle.js"></script>
+<style>body{padding:24px}.lbl{font:600 10.5px/1 var(--font-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--color-muted);margin:0 0 8px}.stack{display:flex;flex-direction:column;gap:24px}.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}</style>
+</head><body class="paper"><div id="root"></div>
+<script type="text/babel">
+const NS = window.Industry_indust;
+const { Article, PullQuote, Tag } = NS;
+function Demo(){return(<Article kicker="From the archive · PM Collective & Product Chai" headline="Most roadmaps fail because nobody agreed on what ‘done’ means" standfirst="Three questions to ask before anything goes on the board." byline="By Maya Fernandes, Head of Product" dateline="26 SEP 2026" image="../../assets/photo.jpg" caption="Originally published on LinkedIn." aside={<div><h3 style={{margin:0}}>Circulation record</h3><p className="standfirst" style={{fontSize:15}}>Passed along 4 times in both groups.</p><div className="rule-dotted" /><div className="label">26 Sep, 09:14 · PM Collective</div><div style={{fontFamily:'var(--font-display)',fontSize:19}}>Priya Sharma <Tag tone="red">First edition</Tag></div><div className="rule-dotted" /><div className="label">27 Sep, 08:02 · Product Chai</div><div style={{fontFamily:'var(--font-display)',fontSize:19}}>+91 98450 •••10 <Tag tone="dashed">Byline pending</Tag></div></div>}>
+<p>Most roadmaps fail not because of bad prioritisation but because nobody agreed on what ‘done’ means. Three questions I now ask before anything goes on the board, and the one I dropped after it caused more arguments than it settled.</p>
+<PullQuote cite="Maya Fernandes">Nobody agreed on what done meant.</PullQuote>
+<p>The first question is about the customer, not the team.</p>
+</Article>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script></body></html>

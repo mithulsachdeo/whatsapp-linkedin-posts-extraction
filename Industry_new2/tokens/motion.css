@@ -1,0 +1,25 @@
+:root{
+--dur-fast:120ms; /* @kind other */
+--dur-base:300ms; /* @kind other */
+--dur-slow:1100ms; /* @kind other */
+--dur-press:900ms; /* @kind other */
+--dur-wire:60s; /* @kind other */
+
+--ease-out:cubic-bezier(.2,.7,.2,1); /* @kind other */
+--ease-press:cubic-bezier(.2,.7,.2,1); /* @kind other */
+--ease-thump:cubic-bezier(.3,1.4,.5,1); /* @kind other */
+}
+@keyframes ink-in{from{opacity:0;filter:blur(4px);letter-spacing:.04em}to{opacity:1;filter:blur(0);letter-spacing:normal}}
+@keyframes press-reveal{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes stamp-in{0%{opacity:0;transform:rotate(-28deg) scale(2.4)}60%{opacity:1;transform:rotate(-10deg) scale(.92)}100%{opacity:1;transform:rotate(-12deg) scale(1)}}
+@keyframes wire-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes type-on{from{max-width:0}to{max-width:100%}}
+@keyframes caret-blink{50%{opacity:0}}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.anim-ink{animation:ink-in var(--dur-slow) var(--ease-out) both}
+.anim-press{animation:press-reveal var(--dur-press) var(--ease-press) both;animation-delay:var(--delay,0s)}
+.anim-stamp{animation:stamp-in 550ms var(--ease-thump) both;animation-delay:var(--delay,.6s)}
+.anim-rise{animation:rise 500ms var(--ease-out) both;animation-delay:var(--delay,0s)}
+.anim-type{display:inline-block;overflow:hidden;white-space:nowrap;vertical-align:bottom;animation:type-on 1.2s steps(28) both}
+.caret{animation:caret-blink .8s steps(1) infinite}
+@media (prefers-reduced-motion:reduce){.anim-ink,.anim-press,.anim-stamp,.anim-rise,.anim-type{animation-duration:1ms!important;animation-delay:0s!important}.wire-track,.caret,.wire-dot{animation:none!important}}

@@ -1,0 +1,20 @@
+:root{
+--color-neutral-100:#faf6ec;--color-neutral-200:#f3ecdc;--color-neutral-300:#e6dcc6;--color-neutral-400:#cfc3a9;--color-neutral-500:#a69a82;--color-neutral-600:#7d725e;--color-neutral-700:#5a5143;--color-neutral-800:#3a342b;--color-neutral-900:#1b1a17;
+--color-accent-100:#f8e6e1;--color-accent-200:#efc6bb;--color-accent-300:#e09a89;--color-accent-400:#cc6a55;--color-accent-500:#b3402c;--color-accent-600:#962f1f;--color-accent-700:#7a2418;--color-accent-800:#5c1a11;--color-accent-900:#3d110b;
+--color-accent-2-100:#f3ead8;--color-accent-2-200:#e6d4ae;--color-accent-2-300:#d3b981;--color-accent-2-400:#bb9b5c;--color-accent-2-500:#9c7c40;--color-accent-2-600:#7e6231;--color-accent-2-700:#624b25;--color-accent-2-800:#46351a;--color-accent-2-900:#2c2110;
+--color-bg:var(--color-neutral-200);--color-surface:var(--color-neutral-100);--color-text:var(--color-neutral-900);--color-muted:var(--color-neutral-700);
+--color-rule:var(--color-neutral-400);--color-rule-strong:var(--color-text);
+--color-accent:var(--color-accent-500);--color-accent-text:var(--color-accent-700);--color-accent-2:var(--color-accent-2-500);--color-accent-2-text:var(--color-accent-2-700);
+--color-on-accent:#fff8ee;--color-overlay:rgba(27,26,23,.55);
+--texture-paper:radial-gradient(rgba(90,81,67,.09) .7px,transparent 1px),radial-gradient(rgba(90,81,67,.06) .6px,transparent 1px); /* @kind other */
+--texture-halftone:radial-gradient(rgba(27,26,23,.22) .9px,transparent 1.4px); /* @kind other */
+}
+[data-edition="night"]{
+--color-neutral-100:#100f0b;--color-neutral-200:#17150f;--color-neutral-300:#221f18;--color-neutral-400:#3a352b;--color-neutral-500:#6b6352;--color-neutral-600:#968b75;--color-neutral-700:#b8ad96;--color-neutral-800:#d6ccb6;--color-neutral-900:#ece4d2;
+--color-accent-100:#2e140f;--color-accent-200:#4a1d15;--color-accent-300:#6e2a1d;--color-accent-400:#9a3b28;--color-accent-500:#c5563d;--color-accent-600:#d8735c;--color-accent-700:#e6927f;--color-accent-800:#f0b6a8;--color-accent-900:#f8dcd4;
+--color-accent-2-100:#211a0e;--color-accent-2-200:#352a16;--color-accent-2-300:#4f3f22;--color-accent-2-400:#705a31;--color-accent-2-500:#9c7c40;--color-accent-2-600:#b8975a;--color-accent-2-700:#d0b47c;--color-accent-2-800:#e3cfa3;--color-accent-2-900:#f2e6cb;
+--color-overlay:rgba(0,0,0,.65);
+--texture-paper:radial-gradient(rgba(236,228,210,.05) .7px,transparent 1px),radial-gradient(rgba(236,228,210,.035) .6px,transparent 1px); /* @kind other */
+--texture-halftone:radial-gradient(rgba(0,0,0,.35) .9px,transparent 1.4px); /* @kind other */
+color-scheme:dark;
+}

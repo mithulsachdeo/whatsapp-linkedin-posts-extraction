@@ -92,7 +92,13 @@ test('the design-system stylesheet is served for the layout to link against', as
   try {
     const res = await request(app).get('/assets/styles.css');
     assert.equal(res.status, 200);
-    assert.match(res.text, /--color-accent/);
+    // The Industry_new2 stylesheet @imports its token files; the accent token
+    // now lives in tokens/colors.css, which must also be served for the link
+    // to resolve at runtime.
+    assert.match(res.text, /tokens\/colors\.css/);
+    const colors = await request(app).get('/assets/tokens/colors.css');
+    assert.equal(colors.status, 200);
+    assert.match(colors.text, /--color-accent/);
   } finally {
     close();
   }

@@ -1,8 +1,10 @@
-// Review screen for UNKNOWN_SENDER items, adapted from the "Pending
-// attribution" screen in Industry/templates/postboard/Postboard.dc.html.
-// Map-to-existing-member or create-new-member both retroactively re-attribute
-// every past (and future) sharing event from that raw sender; the toast's
-// Undo reverses whichever one just happened.
+// The review screen ("byline desk") in the Industry_new2 idiom. Three queues:
+// UNKNOWN_SENDER (assign a byline), OTHER_LINKEDIN (confirm/promote a non-post
+// link) and UNRESOLVED_SHORT_LINK (paste the real URL or dismiss). Every
+// action retroactively flows through the shared pipeline; each toast's Undo
+// reverses exactly the action it is showing. All copy and form actions are
+// preserved verbatim from the pre-reskin version -- the route tests assert on
+// them.
 import { esc } from './layout.js';
 
 /**
@@ -19,22 +21,34 @@ export function renderReviewPage(
   { toast, otherLinkedInToast, shortLinkToast, shortLinkError } = {}
 ) {
   return `
-    <h1 style="font-size:36px;margin-bottom:var(--space-2)">Review queue</h1>
-    <h2 style="font-size:20px;font-weight:600;color:var(--color-neutral-700);margin:0 0 var(--space-2)">Pending attribution</h2>
-    <p style="color:var(--color-neutral-700);max-width:58ch">These senders appear in a chat export but don't match anyone on the member list. Their shares already count on the board and show the raw sender name until you match them.</p>
-    ${toast ? renderToast(toast) : ''}
-    ${items.length === 0 ? renderEmpty() : renderItems(items, members)}
+    <div style="max-width:860px">
+      <div class="kicker kicker-sepia">The byline desk</div>
+      <h1 class="headline headline-xl" style="margin:var(--space-2) 0 var(--space-4)">Review queue</h1>
 
-    <h2 style="font-size:20px;font-weight:600;color:var(--color-neutral-700);margin:var(--space-8) 0 var(--space-2)">Non-post LinkedIn links</h2>
-    <p style="color:var(--color-neutral-700);max-width:58ch">Profile, company, and job links the classifier flagged as not a post. They are never shown on the board. Dismiss to confirm, or promote if the classifier got it wrong.</p>
-    ${otherLinkedInToast ? renderOtherLinkedInToast(otherLinkedInToast) : ''}
-    ${otherLinkedInItems.length === 0 ? renderOtherLinkedInEmpty() : renderOtherLinkedInItems(otherLinkedInItems)}
+      <h2 class="headline headline-md" style="margin:0 0 var(--space-2)">Pending attribution</h2>
+      <p class="standfirst" style="max-width:60ch">These senders appear in a chat export but don't match anyone on the member list. Their shares already count on the board and show the raw sender name until you match them.</p>
+      ${toast ? renderToast(toast) : ''}
+      ${items.length === 0 ? renderEmpty() : renderItems(items, members)}
 
-    <h2 style="font-size:20px;font-weight:600;color:var(--color-neutral-700);margin:var(--space-8) 0 var(--space-2)">Unresolved short links</h2>
-    <p style="color:var(--color-neutral-700);max-width:58ch">lnkd.in links that failed to resolve at import. Paste the real LinkedIn URL to recover one, or dismiss it.</p>
-    ${shortLinkToast ? renderShortLinkToast(shortLinkToast) : ''}
-    ${shortLinkItems.length === 0 ? renderShortLinkEmpty() : renderShortLinkItems(shortLinkItems, shortLinkError)}
+      <h2 class="headline headline-md" style="margin:var(--space-8) 0 var(--space-2)">Non-post LinkedIn links</h2>
+      <p class="standfirst" style="max-width:60ch">Profile, company, and job links the classifier flagged as not a post. They are never shown on the board. Dismiss to confirm, or promote if the classifier got it wrong.</p>
+      ${otherLinkedInToast ? renderOtherLinkedInToast(otherLinkedInToast) : ''}
+      ${otherLinkedInItems.length === 0 ? renderOtherLinkedInEmpty() : renderOtherLinkedInItems(otherLinkedInItems)}
+
+      <h2 class="headline headline-md" style="margin:var(--space-8) 0 var(--space-2)">Unresolved short links</h2>
+      <p class="standfirst" style="max-width:60ch">lnkd.in links that failed to resolve at import. Paste the real LinkedIn URL to recover one, or dismiss it.</p>
+      ${shortLinkToast ? renderShortLinkToast(shortLinkToast) : ''}
+      ${shortLinkItems.length === 0 ? renderShortLinkEmpty() : renderShortLinkItems(shortLinkItems, shortLinkError)}
+    </div>
   `;
+}
+
+function noticeCard(inner, testid) {
+  return `<div class="notice notice-sepia" data-testid="${testid}" style="flex-direction:column;align-items:stretch;gap:var(--space-3)">${inner}</div>`;
+}
+
+function queueWrap(cards) {
+  return `<div style="display:flex;flex-direction:column;gap:var(--space-6);margin:var(--space-6) 4px 0">${cards}</div>`;
 }
 
 function renderItems(items, members) {
@@ -45,87 +59,85 @@ function renderItems(items, members) {
   const cards = items
     .map((item) => {
       const shareLabel = item.shareCount === 1 ? '1 share' : `${item.shareCount} shares`;
-      return `
-      <div class="card" data-testid="review-item" style="padding:var(--space-4) var(--space-6);gap:var(--space-3)">
-        <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
-          <span style="width:44px;height:44px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px dashed var(--color-neutral-600);color:var(--color-neutral-700);font-size:15px;font-weight:700">?</span>
-          <div style="flex:1 1 200px;min-width:0">
-            <div style="font-weight:700;font-size:16px">${esc(item.rawSender)}</div>
-            ${item.firstSeen ? `<div style="font-size:13px;color:var(--color-neutral-700)">First seen ${esc(formatDate(item.firstSeen))}</div>` : ''}
-          </div>
-          <span class="tag tag-accent-2">${shareLabel}</span>
+      const inner = `
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:var(--space-2);font:700 var(--text-xs)/1.3 var(--font-ui);letter-spacing:.14em;text-transform:uppercase">
+          <span style="color:var(--color-accent-2-text)">Notice · Byline wanted</span>
+          <span>${shareLabel}</span>
+        </div>
+        <div>
+          <div class="headline headline-sm">${esc(item.rawSender)}</div>
+          ${item.firstSeen ? `<div class="meta">First seen ${esc(formatDate(item.firstSeen))}</div>` : ''}
         </div>
         <form method="post" action="/review/${item.id}/match" style="display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center">
-          <span style="font-size:13px;color:var(--color-neutral-700)">Match to</span>
-          <select class="input" name="memberId" aria-label="Match ${esc(item.rawSender)} to an existing member" style="width:auto;flex:1 1 200px;max-width:280px">
+          <span class="field-label" style="color:var(--color-muted)">Assign byline</span>
+          <select class="input" name="memberId" aria-label="Match ${esc(item.rawSender)} to an existing member" style="flex:1 1 200px;max-width:280px">
             <option value="">Choose a member…</option>
             ${memberOptions}
           </select>
-          <span style="font-size:13px;color:var(--color-neutral-700)">or create new</span>
-          <input class="input" type="text" name="newMemberName" placeholder="New member's display name" style="width:auto;flex:1 1 200px;max-width:240px" />
-          <button type="submit" class="btn btn-primary">Match</button>
-        </form>
-      </div>`;
+          <span class="field-label" style="color:var(--color-muted)">or create new</span>
+          <input class="input" type="text" name="newMemberName" placeholder="New member's display name" style="flex:1 1 200px;max-width:240px" />
+          <button type="submit" class="btn btn-ink btn-sm">Print correction</button>
+        </form>`;
+      return noticeCard(inner, 'review-item');
     })
     .join('');
 
-  return `<div style="display:flex;flex-direction:column;gap:var(--space-4);margin-top:var(--space-6)">${cards}</div>`;
+  return queueWrap(cards);
 }
 
 function renderEmpty() {
   return `
-    <div data-testid="review-empty" style="display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);padding:var(--space-8) 0">
-      <span style="width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);margin-bottom:var(--space-2)">&#10003;</span>
-      <h3 style="margin:0">Everyone's accounted for</h3>
-      <p style="margin:0;color:var(--color-neutral-700);max-width:50ch">Every share on the board is attributed to a member. Unmatched senders from future imports will appear here.</p>
+    <div data-testid="review-empty" class="empty">
+      <div class="kicker">No corrections today</div>
+      <h3 class="headline headline-md" style="margin:var(--space-2) 0">Everyone's accounted for</h3>
+      <p class="standfirst" style="max-width:52ch">Every share on the board is attributed to a member. Unmatched senders from future imports will appear here.</p>
     </div>`;
 }
 
 function renderToast({ rawSender, memberName, createdMemberId }) {
   return `
-    <div role="status" data-testid="review-toast" style="display:flex;gap:var(--space-3);align-items:center;background:var(--color-neutral-900);color:var(--color-neutral-100);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-3) var(--space-3) var(--space-4);margin-top:var(--space-4);font-size:14px">
-      <span style="flex:1">${esc(rawSender)} is now ${esc(memberName)}. Their shares show this name everywhere.</span>
+    <div role="status" class="toast" data-testid="review-toast" style="margin-top:var(--space-4)">
+      <span class="toast-text"><span class="toast-label">Correction</span>${esc(rawSender)} is now ${esc(memberName)}. Their shares show this name everywhere.</span>
       <form method="post" action="/review/undo" style="margin:0">
         <input type="hidden" name="rawSender" value="${esc(rawSender)}" />
         ${createdMemberId ? `<input type="hidden" name="createdMemberId" value="${esc(createdMemberId)}" />` : ''}
-        <button type="submit" class="btn" style="color:var(--color-accent-300)">Undo</button>
+        <button type="submit" class="btn">Undo</button>
       </form>
     </div>`;
 }
 
 function renderOtherLinkedInItems(items) {
   const cards = items
-    .map(
-      (item) => `
-      <div class="card" data-testid="other-linkedin-item" style="padding:var(--space-4) var(--space-6);gap:var(--space-3)">
+    .map((item) => {
+      const inner = `
         <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
-          <span class="tag tag-accent-2">Not a post</span>
+          <span class="tag tag-sepia">Not a post</span>
           <div style="flex:1 1 260px;min-width:0">
-            <div style="font-weight:700;font-size:15px;word-break:break-all">${esc(item.url)}</div>
-            <div style="font-size:13px;color:var(--color-neutral-700)">Shared by ${esc(item.rawSender)}</div>
+            <div class="headline headline-sm" style="word-break:break-all">${esc(item.url)}</div>
+            <div class="meta">Passed along by ${esc(item.rawSender)}</div>
           </div>
         </div>
         <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
           <form method="post" action="/review/other/${item.id}/dismiss" style="margin:0">
-            <button type="submit" class="btn btn-secondary">Dismiss</button>
+            <button type="submit" class="btn btn-sm">Dismiss</button>
           </form>
           <form method="post" action="/review/other/${item.id}/promote" style="margin:0">
-            <button type="submit" class="btn btn-primary">Promote to post</button>
+            <button type="submit" class="btn btn-ink btn-sm">Promote to post</button>
           </form>
-        </div>
-      </div>`
-    )
+        </div>`;
+      return noticeCard(inner, 'other-linkedin-item');
+    })
     .join('');
 
-  return `<div style="display:flex;flex-direction:column;gap:var(--space-4);margin-top:var(--space-6)">${cards}</div>`;
+  return queueWrap(cards);
 }
 
 function renderOtherLinkedInEmpty() {
   return `
-    <div data-testid="other-linkedin-empty" style="display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);padding:var(--space-8) 0">
-      <span style="width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);margin-bottom:var(--space-2)">&#10003;</span>
-      <h3 style="margin:0">No non-post links to review</h3>
-      <p style="margin:0;color:var(--color-neutral-700);max-width:50ch">Profile, company, and job links from future imports will appear here.</p>
+    <div data-testid="other-linkedin-empty" class="empty">
+      <div class="kicker">All clear</div>
+      <h3 class="headline headline-md" style="margin:var(--space-2) 0">No non-post links to review</h3>
+      <p class="standfirst" style="max-width:52ch">Profile, company, and job links from future imports will appear here.</p>
     </div>`;
 }
 
@@ -135,10 +147,10 @@ function renderOtherLinkedInToast({ action, id, url }) {
       ? `${esc(url)} is now on the board as a post.`
       : `${esc(url)} dismissed as not a post.`;
   return `
-    <div role="status" data-testid="other-linkedin-toast" style="display:flex;gap:var(--space-3);align-items:center;background:var(--color-neutral-900);color:var(--color-neutral-100);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-3) var(--space-3) var(--space-4);margin-top:var(--space-4);font-size:14px">
-      <span style="flex:1">${message}</span>
+    <div role="status" class="toast" data-testid="other-linkedin-toast" style="margin-top:var(--space-4)">
+      <span class="toast-text"><span class="toast-label">Correction</span>${message}</span>
       <form method="post" action="/review/other/${id}/undo" style="margin:0">
-        <button type="submit" class="btn" style="color:var(--color-accent-300)">Undo</button>
+        <button type="submit" class="btn">Undo</button>
       </form>
     </div>`;
 }
@@ -147,46 +159,45 @@ function renderShortLinkItems(items, shortLinkError) {
   const cards = items
     .map((item) => {
       const showError = shortLinkError?.id === item.id;
-      return `
-      <div class="card" data-testid="short-link-item" style="padding:var(--space-4) var(--space-6);gap:var(--space-3)">
+      const inner = `
         <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
-          <span class="tag tag-accent-2">Unresolved</span>
+          <span class="tag tag-sepia">Unresolved</span>
           <div style="flex:1 1 260px;min-width:0">
-            <div style="font-weight:700;font-size:15px;word-break:break-all">${esc(item.url)}</div>
-            <div style="font-size:13px;color:var(--color-neutral-700)">Shared by ${esc(item.rawSender)}</div>
+            <div class="headline headline-sm" style="word-break:break-all">${esc(item.url)}</div>
+            <div class="meta">Passed along by ${esc(item.rawSender)}</div>
           </div>
         </div>
-        ${showError ? '<p role="alert" style="margin:0;color:var(--color-danger-700,#b42318);font-size:13px">That doesn\'t look like a LinkedIn URL. Paste the full resolved link.</p>' : ''}
+        ${showError ? '<p role="alert" style="margin:0;color:var(--color-accent-text);font:600 var(--text-sm)/1.4 var(--font-ui)">That doesn\'t look like a LinkedIn URL. Paste the full resolved link.</p>' : ''}
         <form method="post" action="/review/short/${item.id}/resolve" style="display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center">
           <input class="input" type="url" name="resolvedUrl" placeholder="https://www.linkedin.com/posts/..." aria-label="Resolved URL for ${esc(item.url)}" style="flex:1 1 280px" />
-          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="submit" class="btn btn-ink btn-sm">Save</button>
         </form>
         <form method="post" action="/review/short/${item.id}/dismiss" style="margin:0">
-          <button type="submit" class="btn btn-secondary">Dismiss</button>
-        </form>
-      </div>`;
+          <button type="submit" class="btn btn-sm">Dismiss</button>
+        </form>`;
+      return noticeCard(inner, 'short-link-item');
     })
     .join('');
 
-  return `<div style="display:flex;flex-direction:column;gap:var(--space-4);margin-top:var(--space-6)">${cards}</div>`;
+  return queueWrap(cards);
 }
 
 function renderShortLinkEmpty() {
   return `
-    <div data-testid="short-link-empty" style="display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);padding:var(--space-8) 0">
-      <span style="width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-2-200);color:var(--color-accent-2-800);margin-bottom:var(--space-2)">&#10003;</span>
-      <h3 style="margin:0">No unresolved short links</h3>
-      <p style="margin:0;color:var(--color-neutral-700);max-width:50ch">lnkd.in links that fail to resolve from future imports will appear here.</p>
+    <div data-testid="short-link-empty" class="empty">
+      <div class="kicker">All clear</div>
+      <h3 class="headline headline-md" style="margin:var(--space-2) 0">No unresolved short links</h3>
+      <p class="standfirst" style="max-width:52ch">lnkd.in links that fail to resolve from future imports will appear here.</p>
     </div>`;
 }
 
 function renderShortLinkToast({ action, id, url }) {
   const message = action === 'resolved' ? `${esc(url)} resolved and added to the board.` : `${esc(url)} dismissed.`;
   return `
-    <div role="status" data-testid="short-link-toast" style="display:flex;gap:var(--space-3);align-items:center;background:var(--color-neutral-900);color:var(--color-neutral-100);border-radius:var(--radius-lg);padding:var(--space-3) var(--space-3) var(--space-3) var(--space-4);margin-top:var(--space-4);font-size:14px">
-      <span style="flex:1">${message}</span>
+    <div role="status" class="toast" data-testid="short-link-toast" style="margin-top:var(--space-4)">
+      <span class="toast-text"><span class="toast-label">Correction</span>${message}</span>
       <form method="post" action="/review/short/${id}/undo" style="margin:0">
-        <button type="submit" class="btn" style="color:var(--color-accent-300)">Undo</button>
+        <button type="submit" class="btn">Undo</button>
       </form>
     </div>`;
 }
