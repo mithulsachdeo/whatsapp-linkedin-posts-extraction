@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/testDb.js';
-import { getDashboard, getMemberFilterOptions, getPostDetail } from '../../src/query/dashboard.js';
+import { getDashboard, getMemberFilterOptions, getPostDetail, getPostUrl } from '../../src/query/dashboard.js';
 
 test('getDashboard returns no posts and a null lastUpdated on an empty DB', () => {
   const { db, close } = createTestDb();
@@ -207,6 +207,125 @@ test('getDashboard search matches fetched preview author, role, and excerpt text
 
     const excerptResult = getDashboard(db, { search: 'OKR' });
     assert.deepEqual(excerptResult.posts.map((p) => p.url), ['https://www.linkedin.com/posts/b']);
+  } finally {
+    close();
+  }
+});
+
+test('getDashboard defaults to the unread view: a post whose id is in readIds is excluded', () => {
+  const { db, close } = createTestDb();
+  try {
+    const read = db.prepare(`INSERT INTO posts (canonical_url) VALUES (?)`).run('https://www.linkedin.com/posts/read');
+    const unread = db
+      .prepare(`INSERT INTO posts (canonical_url) VALUES (?)`)
+      .run('https://www.linkedin.com/posts/unread');
+    for (const post of [read, unread]) {
+      db.prepare(
+        `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
+      ).run(post.lastInsertRowid);
+    }
+
+    const result = getDashboard(db, { readIds: [Number(read.lastInsertRowid)] });
+    assert.deepEqual(result.posts.map((p) => p.url), ['https://www.linkedin.com/posts/unread']);
+  } finally {
+    close();
+  }
+});
+
+test('getDashboard view="read" returns only posts whose id is in readIds', () => {
+  const { db, close } = createTestDb();
+  try {
+    const read = db.prepare(`INSERT INTO posts (canonical_url) VALUES (?)`).run('https://www.linkedin.com/posts/read');
+    const unread = db
+      .prepare(`INSERT INTO posts (canonical_url) VALUES (?)`)
+      .run('https://www.linkedin.com/posts/unread');
+    for (const post of [read, unread]) {
+      db.prepare(
+        `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
+      ).run(post.lastInsertRowid);
+    }
+
+    const result = getDashboard(db, { view: 'read', readIds: [Number(read.lastInsertRowid)] });
+    assert.deepEqual(result.posts.map((p) => p.url), ['https://www.linkedin.com/posts/read']);
+  } finally {
+    close();
+  }
+});
+
+test('getDashboard view="read" with an empty readIds returns no posts', () => {
+  const { db, close } = createTestDb();
+  try {
+    const post = db.prepare(`INSERT INTO posts (canonical_url) VALUES (?)`).run('https://www.linkedin.com/posts/a');
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
+    ).run(post.lastInsertRowid);
+
+    const result = getDashboard(db, { view: 'read', readIds: [] });
+    assert.deepEqual(result.posts, []);
+  } finally {
+    close();
+  }
+});
+
+test('getDashboard view="all" ignores readIds and returns every post', () => {
+  const { db, close } = createTestDb();
+  try {
+    const read = db.prepare(`INSERT INTO posts (canonical_url) VALUES (?)`).run('https://www.linkedin.com/posts/read');
+    const unread = db
+      .prepare(`INSERT INTO posts (canonical_url) VALUES (?)`)
+      .run('https://www.linkedin.com/posts/unread');
+    for (const post of [read, unread]) {
+      db.prepare(
+        `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
+      ).run(post.lastInsertRowid);
+    }
+
+    const result = getDashboard(db, { view: 'all', readIds: [Number(read.lastInsertRowid)] });
+    assert.deepEqual(
+      result.posts.map((p) => p.url).sort(),
+      ['https://www.linkedin.com/posts/read', 'https://www.linkedin.com/posts/unread']
+    );
+  } finally {
+    close();
+  }
+});
+
+test('getDashboard share count and ordering are unaffected by the readIds filter', () => {
+  const { db, close } = createTestDb();
+  try {
+    const post = db.prepare(`INSERT INTO posts (canonical_url) VALUES (?)`).run('https://www.linkedin.com/posts/a');
+    for (const ts of ['2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z']) {
+      db.prepare(
+        `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', ?)`
+      ).run(post.lastInsertRowid, ts);
+    }
+
+    const postId = Number(post.lastInsertRowid);
+    const unfiltered = getDashboard(db);
+    const allView = getDashboard(db, { view: 'all', readIds: [postId] });
+    assert.equal(unfiltered.posts[0].shareCount, 2);
+    assert.equal(allView.posts[0].shareCount, 2);
+  } finally {
+    close();
+  }
+});
+
+test('getPostUrl returns the canonical URL for a known post id', () => {
+  const { db, close } = createTestDb();
+  try {
+    const post = db
+      .prepare(`INSERT INTO posts (canonical_url) VALUES (?)`)
+      .run('https://www.linkedin.com/posts/okr-season-7391');
+    assert.equal(getPostUrl(db, Number(post.lastInsertRowid)), 'https://www.linkedin.com/posts/okr-season-7391');
+  } finally {
+    close();
+  }
+});
+
+test('getPostUrl returns null for an id that does not exist', () => {
+  const { db, close } = createTestDb();
+  try {
+    assert.equal(getPostUrl(db, 999), null);
   } finally {
     close();
   }

@@ -28,7 +28,7 @@ export function renderPostDetail(post, { isAdmin }) {
         </div>
         ${preview}
         <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-6);align-items:center">
-          <a class="btn btn-ink" href="${esc(post.url)}" data-testid="open-on-linkedin" target="_blank" rel="noopener">Read the original on LinkedIn ↗</a>
+          <a class="btn btn-ink" href="/out/${post.id}" data-testid="open-on-linkedin" target="_blank" rel="noopener">Read the original on LinkedIn ↗</a>
           <button type="button" class="btn" data-testid="copy-link" data-url="${esc(post.url)}" onclick="navigator.clipboard.writeText(this.dataset.url);this.textContent='Link copied';setTimeout(()=>{this.textContent='Copy link';},2000);">Copy link</button>
         </div>
       </div>
