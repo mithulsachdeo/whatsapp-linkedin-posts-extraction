@@ -37,6 +37,7 @@ export function getDashboard(db, options = {}) {
         p.first_shared_at AS firstSharedAt,
         p.last_shared_at AS lastSharedAt,
         COUNT(se.id) AS shareCount,
+        COUNT(DISTINCT COALESCE('m:' || se.member_id, 'r:' || se.raw_sender)) AS distinctSharerCount,
         SUM(CASE WHEN se.member_id IS NULL THEN 1 ELSE 0 END) AS pendingShareCount
       FROM posts p
       JOIN sharing_events se ON se.post_id = p.id
@@ -62,6 +63,7 @@ export function getDashboard(db, options = {}) {
       firstSharedAt: row.firstSharedAt,
       lastSharedAt: row.lastSharedAt,
       shareCount: row.shareCount,
+      distinctSharerCount: row.distinctSharerCount,
       pendingAttribution: row.pendingShareCount > 0,
     })),
     lastUpdated: lastUpdatedRow?.lastUpdated ?? null,

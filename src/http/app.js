@@ -1,11 +1,16 @@
 import express from 'express';
+import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDashboard } from '../query/dashboard.js';
 import { layout } from '../views/layout.js';
 import { renderDashboard } from '../views/dashboard.js';
-import { renderImportPlaceholder, renderReviewPlaceholder } from '../views/placeholders.js';
+import { renderImportPage } from '../views/import.js';
+import { renderReviewPlaceholder } from '../views/placeholders.js';
 import { detectAdmin, requireAdmin } from './adminAuth.js';
+import { WhatsAppTxtAdapter } from '../ingest/adapter.js';
+import { ingest } from '../ingest/ingest.js';
+import { GROUPS } from '../ingest/groups.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INDUSTRY_DIR = path.join(__dirname, '..', '..', 'Industry');
@@ -20,6 +25,7 @@ const INDUSTRY_DIR = path.join(__dirname, '..', '..', 'Industry');
 export function createApp(db, options = {}) {
   const app = express();
   const adminToken = options.adminToken ?? process.env.ADMIN_TOKEN;
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 
   app.use(detectAdmin(adminToken));
   // Design-system tokens/components are the visual source of truth; served
@@ -29,7 +35,8 @@ export function createApp(db, options = {}) {
 
   app.get('/', (req, res) => {
     const data = getDashboard(db);
-    const body = renderDashboard(data, { isAdmin: req.isAdmin });
+    const density = req.query.density === 'cards' ? 'cards' : 'rows';
+    const body = renderDashboard(data, { isAdmin: req.isAdmin, density });
     res.send(
       layout({ title: 'Posts', active: 'posts', isAdmin: req.isAdmin, lastUpdated: data.lastUpdated, body })
     );
@@ -43,7 +50,41 @@ export function createApp(db, options = {}) {
         active: 'import',
         isAdmin: req.isAdmin,
         lastUpdated: data.lastUpdated,
-        body: renderImportPlaceholder(),
+        body: renderImportPage(),
+      })
+    );
+  });
+
+  app.post('/import', requireAdmin, upload.single('file'), (req, res) => {
+    const groupId = req.body?.groupId;
+    const file = req.file;
+
+    let body;
+    if (!file) {
+      body = renderImportPage({ error: 'Choose a .txt or .zip chat export to import.' });
+    } else if (!GROUPS.some((g) => g.id === groupId)) {
+      body = renderImportPage({ error: 'Choose which group this export belongs to.' });
+    } else {
+      try {
+        const loaded = WhatsAppTxtAdapter.load(file.buffer, file.originalname);
+        const result = ingest(db, loaded.text, groupId, {
+          filename: loaded.sourceFilename ?? file.originalname,
+          contentHash: loaded.contentHash,
+        });
+        body = renderImportPage({ result });
+      } catch (err) {
+        body = renderImportPage({ error: `Import failed: ${err.message}` });
+      }
+    }
+
+    const refreshed = getDashboard(db);
+    res.send(
+      layout({
+        title: 'Import',
+        active: 'import',
+        isAdmin: req.isAdmin,
+        lastUpdated: refreshed.lastUpdated,
+        body,
       })
     );
   });

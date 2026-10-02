@@ -1,13 +1,6 @@
-// Import/Review placeholders for the walking skeleton. Real behaviour
-// (upload flow, review queue actions) lands with the ingestion and
-// review-queue tickets.
-
-export function renderImportPlaceholder() {
-  return `
-    <h1 style="font-size:36px;margin-bottom:var(--space-2)">Import a chat export</h1>
-    <p style="color:var(--color-neutral-700);max-width:54ch">Coming soon: upload a WhatsApp "Without Media" export here.</p>
-  `;
-}
+// Review placeholder for the walking skeleton. Real behaviour (review queue
+// actions) lands with the review-queue ticket. The import placeholder was
+// replaced by src/views/import.js once ingestion shipped.
 
 export function renderReviewPlaceholder() {
   return `

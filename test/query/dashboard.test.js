@@ -64,6 +64,35 @@ test('getDashboard aggregates share count and orders most-recent-first by defaul
   }
 });
 
+test('getDashboard counts distinct sharers, treating unresolved raw senders as distinct from each other', () => {
+  const { db, close } = createTestDb();
+  try {
+    const post = db.prepare(`INSERT INTO posts (canonical_url) VALUES (?)`).run('https://www.linkedin.com/posts/multi');
+
+    // Same resolved member shares twice -> 1 distinct sharer.
+    const member = db.prepare('INSERT INTO members (display_name) VALUES (?)').run('Priya Sharma');
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp) VALUES (?, 'group-a', 'Priya Sharma', ?, '2026-09-01T00:00:00.000Z')`
+    ).run(post.lastInsertRowid, Number(member.lastInsertRowid));
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp) VALUES (?, 'group-a', 'Priya Sharma', ?, '2026-09-02T00:00:00.000Z')`
+    ).run(post.lastInsertRowid, Number(member.lastInsertRowid));
+    // Two different unresolved raw senders -> 2 more distinct sharers.
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp) VALUES (?, 'group-a', '+91 1', NULL, '2026-09-03T00:00:00.000Z')`
+    ).run(post.lastInsertRowid);
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp) VALUES (?, 'group-a', '+91 2', NULL, '2026-09-04T00:00:00.000Z')`
+    ).run(post.lastInsertRowid);
+
+    const result = getDashboard(db);
+    assert.equal(result.posts[0].shareCount, 4);
+    assert.equal(result.posts[0].distinctSharerCount, 3);
+  } finally {
+    close();
+  }
+});
+
 test('getDashboard marks a post pending attribution when any share has no resolved member', () => {
   const { db, close } = createTestDb();
   try {
