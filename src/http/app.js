@@ -11,6 +11,7 @@ import { detectAdmin, requireAdmin } from './adminAuth.js';
 import { WhatsAppTxtAdapter } from '../ingest/adapter.js';
 import { ingest } from '../ingest/ingest.js';
 import { GROUPS } from '../ingest/groups.js';
+import { setPreviewOverride } from '../preview/previewCache.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INDUSTRY_DIR = path.join(__dirname, '..', '..', 'Industry');
@@ -27,6 +28,7 @@ export function createApp(db, options = {}) {
   const adminToken = options.adminToken ?? process.env.ADMIN_TOKEN;
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 
+  app.use(express.urlencoded({ extended: false }));
   app.use(detectAdmin(adminToken));
   // Design-system tokens/components are the visual source of truth; served
   // as-is rather than copied, so retuning Industry/styles.css is reflected
@@ -70,6 +72,7 @@ export function createApp(db, options = {}) {
         const result = ingest(db, loaded.text, groupId, {
           filename: loaded.sourceFilename ?? file.originalname,
           contentHash: loaded.contentHash,
+          previewFetcher: options.previewFetcher,
         });
         body = renderImportPage({ result });
       } catch (err) {
@@ -100,6 +103,20 @@ export function createApp(db, options = {}) {
         body: renderReviewPlaceholder(),
       })
     );
+  });
+
+  // Admin action (spec): manually set/edit a post's preview. Overrides
+  // whatever was fetched (or not) and is never overwritten by a later fetch
+  // -- see src/preview/previewCache.js's preview_edited guard.
+  app.post('/posts/:id/preview', requireAdmin, (req, res) => {
+    const postId = Number(req.params.id);
+    const { author, role, excerpt } = req.body ?? {};
+    setPreviewOverride(db, postId, {
+      author: author?.trim() || null,
+      role: role?.trim() || null,
+      excerpt: excerpt?.trim() || null,
+    });
+    res.redirect('/');
   });
 
   return app;

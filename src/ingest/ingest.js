@@ -6,12 +6,14 @@
 import { createHash } from 'node:crypto';
 import { parseMessages } from './parseChat.js';
 import { extractPostUrls, canonicalizeUrl } from './linkedin.js';
+import { NullPreviewFetcher } from '../preview/previewFetcher.js';
+import { cacheFetchedPreview, markPreviewUnavailable } from '../preview/previewCache.js';
 
 /**
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {string} rawExportText decoded chat export text
  * @param {string} groupId admin-selected group for this upload (stored, not shown)
- * @param {{ filename?: string, contentHash?: string }} [options]
+ * @param {{ filename?: string, contentHash?: string, previewFetcher?: { fetch(url: string): Promise<object> } }} [options]
  * @returns {{
  *   importBatchId: number,
  *   messagesRead: number,
@@ -21,10 +23,12 @@ import { extractPostUrls, canonicalizeUrl } from './linkedin.js';
  *   newSharingEvents: number,
  *   duplicateFileWarning: boolean,
  *   pendingAttributionSenders: string[],
+ *   previewFetchesSettled: Promise<void>,
  * }}
  */
 export function ingest(db, rawExportText, groupId, options = {}) {
   const contentHash = options.contentHash ?? createHash('sha256').update(rawExportText, 'utf8').digest('hex');
+  const previewFetcher = options.previewFetcher ?? NullPreviewFetcher;
 
   const duplicateFileWarning = Boolean(
     db
@@ -39,6 +43,8 @@ export function ingest(db, rawExportText, groupId, options = {}) {
   let alreadyOnBoard = 0;
   let newSharingEvents = 0;
   const pendingAttributionSenders = new Set();
+  // One best-effort preview fetch per NEW post (spec), fired after commit.
+  const newPostFetchTargets = [];
 
   db.exec('BEGIN');
   try {
@@ -50,8 +56,12 @@ export function ingest(db, rawExportText, groupId, options = {}) {
         if (!canonicalUrl) continue; // defensive; extractPostUrls already filtered
 
         const { id: postId, isNew } = upsertPost(db, canonicalUrl);
-        if (isNew) newPosts++;
-        else alreadyOnBoard++;
+        if (isNew) {
+          newPosts++;
+          newPostFetchTargets.push({ postId, canonicalUrl });
+        } else {
+          alreadyOnBoard++;
+        }
 
         const memberId = resolveMember(db, message.rawSender);
         if (memberId === null) {
@@ -85,6 +95,26 @@ export function ingest(db, rawExportText, groupId, options = {}) {
 
     db.exec('COMMIT');
 
+    // Fired after commit so ingestion's own transaction never blocks on, or
+    // fails because of, outbound HTTP (spec). Each post's fetch settles
+    // independently; previewFetchesSettled lets tests await deterministic
+    // completion without ingest() itself waiting on the network.
+    const previewFetchesSettled = Promise.all(
+      newPostFetchTargets.map(({ postId, canonicalUrl }) =>
+        Promise.resolve()
+          .then(() => previewFetcher.fetch(canonicalUrl))
+          .then(
+            (preview) => cacheFetchedPreview(db, postId, preview ?? {}),
+            () => markPreviewUnavailable(db, postId)
+          )
+          // The write-back itself can still fail (e.g. the DB handle closed
+          // in the meantime, as a short-lived test or request lifecycle
+          // might do) -- swallow that too so a caller that never awaits
+          // previewFetchesSettled can never see an unhandled rejection.
+          .catch(() => {})
+      )
+    ).then(() => undefined);
+
     return {
       importBatchId,
       messagesRead: messages.length,
@@ -94,6 +124,7 @@ export function ingest(db, rawExportText, groupId, options = {}) {
       newSharingEvents,
       duplicateFileWarning,
       pendingAttributionSenders: [...pendingAttributionSenders],
+      previewFetchesSettled,
     };
   } catch (err) {
     db.exec('ROLLBACK');
