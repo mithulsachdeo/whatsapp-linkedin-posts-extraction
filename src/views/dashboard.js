@@ -285,13 +285,15 @@ function restoreControl(post, view) {
 }
 
 function indexRow(post, view) {
-  const title = post.previewAuthor || 'Preview unavailable';
+  const { label, headline } = previewAvailable(post)
+    ? rowPreviewText(post)
+    : { label: '', headline: 'Preview unavailable' };
   const row = `
     <a class="index-row" href="/posts/${post.id}" style="flex:1 1 auto;grid-template-columns:minmax(0,1fr)">
       <span style="min-width:0">
-        <span class="headline headline-sm" style="display:block">${esc(title)}</span>
-        ${post.previewRole ? `<span class="meta" style="display:block">${esc(post.previewRole)}</span>` : ''}
-        <span style="display:block;font:var(--text-sm)/1.45 var(--font-body);color:var(--color-neutral-800);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(post.previewExcerpt || post.url)}</span>
+        ${label ? `<span class="meta" style="display:block">${esc(label)}</span>` : ''}
+        <span class="headline headline-sm" style="display:block">${esc(headline)}</span>
+        ${previewAvailable(post) ? '' : `<span style="display:block;font:var(--text-sm)/1.45 var(--font-body);color:var(--color-neutral-800);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(post.url)}</span>`}
         ${indexMeta(post)}
       </span>
     </a>`;
@@ -299,6 +301,23 @@ function indexRow(post, view) {
   return restore
     ? `<div style="display:flex;align-items:center;gap:var(--space-4)">${row}${restore}</div>`
     : row;
+}
+
+// A post is "preview-available" when either field the preview-first sort
+// relies on is set -- same rule, so a post the sort treats as "has a
+// preview" never falls back to the "From the archive" / url copy here.
+function previewAvailable(post) {
+  return Boolean(post.previewAuthor || post.previewExcerpt);
+}
+
+// Prominent line = the excerpt, author name = the small label above it.
+// Fallbacks (never show the same string as both): author-only -> author is
+// the headline, no label; excerpt-only -> excerpt is the headline, no label.
+function rowPreviewText(post) {
+  if (post.previewExcerpt) {
+    return { label: post.previewAuthor || '', headline: post.previewExcerpt };
+  }
+  return { label: '', headline: post.previewAuthor };
 }
 
 function indexMeta(post) {
@@ -318,17 +337,22 @@ function renderCards(posts, view) {
   return `<div class="columns" data-testid="post-list-cards">${stories}</div>`;
 }
 
+// Cards clamp the excerpt-as-headline to a few lines via CSS so a long post
+// can't blow up the card layout (the excerpt is otherwise shown in full).
+const HEADLINE_CLAMP_STYLE = 'display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden';
+
 function columnStory(post, view) {
-  const title = post.previewAuthor || 'Preview unavailable';
+  const { kicker, headline } = previewAvailable(post)
+    ? cardPreviewText(post)
+    : { kicker: 'From the archive', headline: 'Preview unavailable' };
   const story = `
     <a class="story story-link" href="/posts/${post.id}" style="display:block">
       <div class="kicker-row">
-        <span class="kicker">From the archive</span>
+        ${kicker ? `<span class="kicker">${esc(kicker)}</span>` : ''}
         ${post.pendingAttribution ? '<span class="kicker kicker-sepia">Pending attribution</span>' : ''}
       </div>
-      <h3 class="headline headline-md">${esc(title)}</h3>
-      ${post.previewRole ? `<div class="byline">${esc(post.previewRole)}</div>` : ''}
-      <p class="story-body">${esc(post.previewExcerpt || post.url)}</p>
+      <h3 class="headline headline-md" style="${HEADLINE_CLAMP_STYLE}">${esc(headline)}</h3>
+      ${previewAvailable(post) ? '' : `<p class="story-body">${esc(post.url)}</p>`}
       <div class="story-foot meta">
         ${sharedBy(post.sharers)}
         <span class="dateline" style="white-space:nowrap">${esc(formatDateRange(post.firstSharedAt, post.lastSharedAt))}</span>
@@ -338,6 +362,16 @@ function columnStory(post, view) {
   return restore
     ? `<div class="story" style="break-inside:avoid">${story}${restore}</div>`
     : story;
+}
+
+// Kicker = author name, headline = excerpt. Fallbacks (never show the same
+// string as both kicker and headline): author-only -> headline is the
+// author name, no kicker; excerpt-only -> headline is the excerpt, no kicker.
+function cardPreviewText(post) {
+  if (post.previewExcerpt) {
+    return { kicker: post.previewAuthor || '', headline: post.previewExcerpt };
+  }
+  return { kicker: '', headline: post.previewAuthor };
 }
 
 // Shows "by <member display name>" for a matched sharer (the raw sender/phone

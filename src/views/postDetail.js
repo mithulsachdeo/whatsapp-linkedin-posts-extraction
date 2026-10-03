@@ -15,12 +15,21 @@ export function renderPostDetail(post, { isAdmin }) {
   const title = post.previewAuthor || 'Preview unavailable';
   const hasPreview = Boolean(post.previewAuthor || post.previewExcerpt);
   const preview = hasPreview ? renderPreview(post) : renderNoPreview(post.url);
+  // Author-as-kicker would duplicate the headline here (the headline is
+  // already the author name), so the detail kicker is the author's role
+  // instead; omitted entirely when there's no role to show. The generic
+  // "From the archive" kicker is reserved for preview-unavailable posts.
+  const kicker = hasPreview
+    ? post.previewRole
+      ? `<div class="kicker">${esc(post.previewRole)}</div>`
+      : ''
+    : '<div class="kicker">From the archive</div>';
 
   return `
     <a class="btn btn-link" href="/" style="margin-bottom:var(--space-3)">← Back to the front page</a>
     <div class="article">
       <div class="article-main">
-        <div class="kicker">From the archive</div>
+        ${kicker}
         <h1 class="headline headline-xl" data-testid="post-detail-title">${esc(title)}</h1>
         <div class="article-byline">
           ${post.previewRole ? `<span class="byline">${esc(post.previewRole)}</span>` : ''}

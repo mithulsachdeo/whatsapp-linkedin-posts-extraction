@@ -136,6 +136,72 @@ test('GET /posts/:id hides the group label from an anonymous visitor but shows i
   }
 });
 
+test('GET /posts/:id shows the author\'s role as the kicker for a preview-available post, never "From the archive"', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    const postId = seedPost(db);
+    const res = await request(app).get(`/posts/${postId}`);
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(res.text, /From the archive/);
+    assert.match(res.text, /PM @ Acme/);
+    // Headline stays the author name, body stays the excerpt -- the role
+    // kicker is the one surface where author-as-kicker would duplicate the
+    // headline.
+    assert.match(res.text, /data-testid="post-detail-title">Ananya Rao</);
+  } finally {
+    close();
+  }
+});
+
+test('GET /posts/:id omits the kicker (no "From the archive") for a preview-available post with no role', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    const post = db
+      .prepare(
+        `INSERT INTO posts (canonical_url, preview_author, preview_excerpt, first_shared_at, last_shared_at)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(
+        'https://www.linkedin.com/posts/no-role-7393',
+        'Deepa Nair',
+        'A short note with no role attached.',
+        '2026-09-01T00:00:00.000Z',
+        '2026-09-01T00:00:00.000Z'
+      );
+    const postId = Number(post.lastInsertRowid);
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
+    ).run(postId);
+
+    const res = await request(app).get(`/posts/${postId}`);
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(res.text, /From the archive/);
+    assert.match(res.text, /data-testid="post-detail-title">Deepa Nair</);
+  } finally {
+    close();
+  }
+});
+
+test('GET /posts/:id still shows "From the archive" for a preview-unavailable post', async () => {
+  const { app, db, close } = buildApp();
+  try {
+    const post = db
+      .prepare(`INSERT INTO posts (canonical_url, preview_unavailable) VALUES (?, 1)`)
+      .run('https://www.linkedin.com/posts/no-preview-7394');
+    const postId = Number(post.lastInsertRowid);
+    db.prepare(
+      `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp)
+       VALUES (?, 'product-chai', '+91 1', '2026-09-01T00:00:00.000Z')`
+    ).run(postId);
+
+    const res = await request(app).get(`/posts/${postId}`);
+    assert.equal(res.status, 200);
+    assert.match(res.text, /From the archive/);
+  } finally {
+    close();
+  }
+});
+
 test('GET /posts/:id shows the URL-only "no preview" block when no preview was fetched', async () => {
   const { app, db, close } = buildApp();
   try {

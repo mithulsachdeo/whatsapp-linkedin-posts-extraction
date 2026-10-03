@@ -181,8 +181,9 @@ test('GET /?member=<id> filters to that member and shows the member header', asy
     const { member } = seedPosts(db);
     const res = await request(app).get(`/?member=${member.lastInsertRowid}`);
     assert.equal(res.status, 200);
+    // The okr post is author-only preview-available (no excerpt), so its
+    // card headline is the author name -- the url slug no longer renders.
     assert.match(res.text, /Ananya Rao/);
-    assert.match(res.text, /okr-season-7391/);
     assert.doesNotMatch(res.text, /unattributed-share/);
   } finally {
     close();
@@ -208,7 +209,9 @@ test('GET /?q=<term> searches the post URL/slug and fetched preview text', async
     seedPosts(db);
     const res = await request(app).get('/?q=okr');
     assert.equal(res.status, 200);
-    assert.match(res.text, /okr-season-7391/);
+    // The matched post is author-only preview-available (no excerpt), so its
+    // card headline is the author name -- the url slug no longer renders.
+    assert.match(res.text, /Ananya Rao/);
     assert.doesNotMatch(res.text, /unattributed-share/);
   } finally {
     close();
@@ -293,6 +296,103 @@ test('GET /?density=cards overrides an existing layout=rows cookie and re-sets t
     assert.match(res.text, /data-testid="post-list-cards"/);
     const setCookie = res.headers['set-cookie'] ?? [];
     assert.ok(setCookie.some((c) => /^layout=cards;/.test(c)), 'expected a layout=cards Set-Cookie header');
+  } finally {
+    close();
+  }
+});
+
+// A post is "preview-available" when previewAuthor OR previewExcerpt is set
+// (same rule the preview-first sort uses). Author name + excerpt should
+// headline the card/row; the generic "From the archive" kicker is reserved
+// for posts with neither.
+function seedPreviewAvailablePost(db) {
+  const post = db
+    .prepare(
+      `INSERT INTO posts (canonical_url, preview_author, preview_role, preview_excerpt, first_shared_at, last_shared_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'https://www.linkedin.com/posts/okr-season-7391',
+      'Ananya Rao',
+      'PM @ Acme',
+      'Notes on our Q4 OKRs, in full.',
+      '2026-09-01T00:00:00.000Z',
+      '2026-09-01T00:00:00.000Z'
+    );
+  const postId = Number(post.lastInsertRowid);
+  db.prepare(
+    `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
+  ).run(postId);
+  return postId;
+}
+
+function seedPreviewUnavailablePost(db) {
+  const post = db
+    .prepare(`INSERT INTO posts (canonical_url, preview_unavailable, first_shared_at, last_shared_at) VALUES (?, 1, ?, ?)`)
+    .run('https://www.linkedin.com/posts/no-preview-9000', '2026-09-02T00:00:00.000Z', '2026-09-02T00:00:00.000Z');
+  const postId = Number(post.lastInsertRowid);
+  db.prepare(
+    `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 2', '2026-09-02T00:00:00.000Z')`
+  ).run(postId);
+  return postId;
+}
+
+test('GET / (cards) shows the author as the kicker and the excerpt as the headline for a preview-available post, with no "From the archive" kicker', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPreviewAvailablePost(db);
+    const res = await request(app).get('/');
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(res.text, /From the archive/);
+    const kickerIndex = res.text.indexOf('Ananya Rao');
+    const headlineIndex = res.text.indexOf('Notes on our Q4 OKRs');
+    assert.ok(kickerIndex !== -1 && headlineIndex !== -1, 'both author kicker and excerpt headline should render');
+    assert.ok(kickerIndex < headlineIndex, 'author kicker should render above the excerpt headline');
+    // The role byline and the separate story-body excerpt line are dropped --
+    // the excerpt is now the headline, so repeating it would duplicate.
+    assert.doesNotMatch(res.text, /PM @ Acme/);
+  } finally {
+    close();
+  }
+});
+
+test('GET /?density=rows shows the excerpt as the prominent line and the author as a small label for a preview-available post', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPreviewAvailablePost(db);
+    const res = await request(app).get('/?density=rows');
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(res.text, /From the archive/);
+    const authorIndex = res.text.indexOf('Ananya Rao');
+    const excerptIndex = res.text.indexOf('Notes on our Q4 OKRs');
+    assert.ok(authorIndex !== -1 && excerptIndex !== -1);
+    assert.ok(authorIndex < excerptIndex, 'the author label should render above the excerpt line');
+    assert.doesNotMatch(res.text, /PM @ Acme/);
+  } finally {
+    close();
+  }
+});
+
+test('GET / (cards) still shows "From the archive" for a preview-unavailable post', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPreviewUnavailablePost(db);
+    const res = await request(app).get('/');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /From the archive/);
+    assert.match(res.text, /Preview unavailable/);
+  } finally {
+    close();
+  }
+});
+
+test('GET /?density=rows still renders a preview-unavailable post without an author label or excerpt text', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPreviewUnavailablePost(db);
+    const res = await request(app).get('/?density=rows');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /Preview unavailable/);
   } finally {
     close();
   }

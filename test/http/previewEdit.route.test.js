@@ -51,8 +51,13 @@ test("POST /posts/:id/preview lets the admin override a post's preview, which th
 
     const dashboard = await request(app).get('/');
     assert.match(dashboard.text, /Priya Sharma/);
-    assert.match(dashboard.text, /PM @ Acme/);
     assert.match(dashboard.text, /Worth a read\./);
+
+    // The role is persisted even though the card itself no longer shows a
+    // role byline (dashboard.js: cards show author-as-kicker + excerpt-as-
+    // headline) -- the detail page's role kicker is where it surfaces.
+    const detail = await request(app).get(`/posts/${postId}`);
+    assert.match(detail.text, /PM @ Acme/);
   } finally {
     close();
   }
