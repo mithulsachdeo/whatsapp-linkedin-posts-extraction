@@ -340,17 +340,17 @@ function columnStory(post, view) {
     : story;
 }
 
-// Shows the member display name AND the raw sender/phone for every sharer
-// (spec: acceptable while the deployment is internal-for-now). A sharer with
-// no resolved member shows the raw sender alone, labelled pending.
+// Shows "by <member display name>" for a matched sharer (the raw sender/phone
+// contact string is intentionally not shown). A sharer with no resolved member
+// shows the raw sender alone, labelled pending attribution.
 function sharedBy(sharers) {
   if (!sharers || sharers.length === 0) return '';
   const labels = sharers.map((s) =>
     s.displayName
-      ? `${esc(s.displayName)} <span style="color:var(--color-neutral-600)">(${esc(s.rawSender)})</span>`
+      ? esc(s.displayName)
       : `${esc(s.rawSender)} <span style="color:var(--color-neutral-600)">(pending attribution)</span>`
   );
-  return `<span data-testid="shared-by">Passed along by ${labels.join(', ')}</span>`;
+  return `<span data-testid="shared-by">by ${labels.join(', ')}</span>`;
 }
 
 function formatDateRange(firstSharedAt, lastSharedAt) {
