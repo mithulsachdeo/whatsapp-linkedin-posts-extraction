@@ -39,7 +39,7 @@ export function layout({ title, active, isAdmin, lastUpdated, body }) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${esc(title)} — Postboard</title>
+<title>${esc(title)} — The Rethinkers' Postcard</title>
 <link rel="stylesheet" href="/assets/styles.css" />
 </head>
 <body class="paper">
@@ -50,7 +50,7 @@ export function layout({ title, active, isAdmin, lastUpdated, body }) {
     <span>No engagement figures kept</span>
   </div>
   <div class="masthead-block anim-ink">
-    <h1 class="masthead-title">The Postboard</h1>
+    <h1 class="masthead-title">The Rethinkers' Postcard</h1>
     <p class="masthead-motto">Every LinkedIn post shared in the groups, printed once and credited to whoever passed it along</p>
   </div>
   <nav class="section-nav">
