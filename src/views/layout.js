@@ -50,7 +50,12 @@ export function layout({ title, active, isAdmin, lastUpdated, body }) {
     <span>No engagement figures kept</span>
   </div>
   <div class="masthead-block anim-ink">
-    <h1 class="masthead-title">The Rethinkers' Postcard</h1>
+    <!-- Localized override: "The Rethinkers' Postcard" (24 chars) is longer than the
+         design system's "The Postboard" default, which wraps at the shared
+         clamp(44px,10vw,112px) size. This clamp(32px,6vw,76px) keeps it on one line
+         at desktop widths (>=1200px, ~1100px usable column) without touching the
+         shared .masthead-title token in Industry_new2/tokens/components.css. -->
+    <h1 class="masthead-title" style="font-size:clamp(32px,6vw,76px)">The Rethinkers' Postcard</h1>
     <p class="masthead-motto">Every LinkedIn post shared in the groups, printed once and credited to whoever passed it along</p>
   </div>
   <nav class="section-nav">
