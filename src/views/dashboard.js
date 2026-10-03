@@ -159,10 +159,12 @@ function renderControls(state, filterOptions, activeMember) {
   return `
     <form method="get" action="/" data-testid="dashboard-controls" style="display:flex;flex-wrap:wrap;gap:var(--space-4) var(--space-6);align-items:flex-end;padding-bottom:var(--space-3);margin-bottom:var(--space-4);border-bottom:1px solid var(--color-text)">
       ${memberParamFor(activeMember) ? `<input type="hidden" name="member" value="${esc(memberParamFor(activeMember))}">` : ''}
-      <input class="input" type="search" name="q" placeholder="Search the archive…" value="${esc(state.search)}" aria-label="Search posts" style="flex:1 1 240px;min-width:0">
+      <div style="display:flex;gap:var(--space-2);flex:1 1 240px;min-width:0">
+        <input class="input" type="search" name="q" placeholder="Search the archive…" value="${esc(state.search)}" aria-label="Search posts" style="flex:1 1 auto;min-width:0">
+        <button type="submit" class="btn btn-sm">Search</button>
+      </div>
       ${densityToggle}
       ${memberSelect}
-      <button type="submit" class="btn btn-sm">Apply</button>
     </form>
   `;
 }

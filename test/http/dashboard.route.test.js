@@ -218,6 +218,26 @@ test('GET /?q=<term> searches the post URL/slug and fetched preview text', async
   }
 });
 
+test('GET / renders a "Search" submit button grouped directly with the search input', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPosts(db);
+    const res = await request(app).get('/');
+    assert.equal(res.status, 200);
+    // The submit button is relabelled "Search" (it only submits the typed
+    // search text -- the Layout toggle and member select auto-submit on
+    // change) and sits immediately next to the search input, not after the
+    // other controls.
+    assert.doesNotMatch(res.text, />Apply</);
+    const searchGroupMatch = res.text.match(
+      /<input class="input" type="search" name="q"[^>]*>\s*<button type="submit" class="btn btn-sm">Search<\/button>/
+    );
+    assert.ok(searchGroupMatch, 'expected the search input and "Search" button to be adjacent');
+  } finally {
+    close();
+  }
+});
+
 test('GET /?q=<no match> shows the no-results state with a clear/reset action, not the first-run empty state', async () => {
   const { app, close, db } = buildApp();
   try {
