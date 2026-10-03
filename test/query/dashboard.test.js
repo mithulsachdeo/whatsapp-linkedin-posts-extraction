@@ -64,6 +64,47 @@ test('getDashboard aggregates share count and orders most-recent-first by defaul
   }
 });
 
+test('getDashboard groups posts with a preview before posts without one, newest-first within each group', () => {
+  const { db, close } = createTestDb();
+  try {
+    // Older post, HAS a preview (via preview_author) -> should outrank a
+    // newer post with no preview at all.
+    const olderWithPreview = db
+      .prepare(`INSERT INTO posts (canonical_url, preview_author, last_shared_at) VALUES (?, ?, ?)`)
+      .run('https://www.linkedin.com/posts/older-with-preview', 'Ananya Rao', '2026-09-01T00:00:00.000Z');
+    // Newer post, no preview fields at all.
+    const newerNoPreview = db
+      .prepare(`INSERT INTO posts (canonical_url, last_shared_at) VALUES (?, ?)`)
+      .run('https://www.linkedin.com/posts/newer-no-preview', '2026-09-20T00:00:00.000Z');
+    // Newest post, HAS a preview (via preview_excerpt) -> should rank above
+    // the older-with-preview post, within the has-preview group.
+    const newestWithPreview = db
+      .prepare(`INSERT INTO posts (canonical_url, preview_excerpt, last_shared_at) VALUES (?, ?, ?)`)
+      .run('https://www.linkedin.com/posts/newest-with-preview', 'Some excerpt text', '2026-09-25T00:00:00.000Z');
+    // Oldest post, no preview -> should rank below newer-no-preview, within
+    // the no-preview group.
+    const oldestNoPreview = db
+      .prepare(`INSERT INTO posts (canonical_url, last_shared_at) VALUES (?, ?)`)
+      .run('https://www.linkedin.com/posts/oldest-no-preview', '2026-08-01T00:00:00.000Z');
+
+    for (const post of [olderWithPreview, newerNoPreview, newestWithPreview, oldestNoPreview]) {
+      db.prepare(
+        `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
+      ).run(post.lastInsertRowid);
+    }
+
+    const result = getDashboard(db);
+    assert.deepEqual(result.posts.map((p) => p.url), [
+      'https://www.linkedin.com/posts/newest-with-preview',
+      'https://www.linkedin.com/posts/older-with-preview',
+      'https://www.linkedin.com/posts/newer-no-preview',
+      'https://www.linkedin.com/posts/oldest-no-preview',
+    ]);
+  } finally {
+    close();
+  }
+});
+
 test('getDashboard counts distinct sharers, treating unresolved raw senders as distinct from each other', () => {
   const { db, close } = createTestDb();
   try {

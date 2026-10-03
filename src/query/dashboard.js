@@ -5,12 +5,18 @@
 
 import { groupName } from '../ingest/groups.js';
 
-// Only one order is meaningful: most-recently-shared first. A share-count
-// sort was removed deliberately -- repeat shares are the author bumping their
-// own link, not member endorsement, so counting them ranked self-promotion.
-// A real "most valued" order returns only with v2 explicit upvotes/reactions.
+// Only one order is meaningful. Primary key: preview availability -- posts
+// with a real preview to show (admin-edited or successfully fetched) rank
+// above posts without one (fetch failed or not yet fetched), since a
+// preview-less card is a much weaker discovery result regardless of age.
+// Secondary key: most-recently-shared first, id as a stable tiebreak. A
+// share-count sort was removed deliberately -- repeat shares are the author
+// bumping their own link, not member endorsement, so counting them ranked
+// self-promotion. A real "most valued" order returns only with v2 explicit
+// upvotes/reactions.
 const SORTS = {
-  recent: 'last_shared_at DESC',
+  recent:
+    '(CASE WHEN p.preview_author IS NOT NULL OR p.preview_excerpt IS NOT NULL THEN 0 ELSE 1 END) ASC, p.last_shared_at DESC, p.id DESC',
 };
 
 /**

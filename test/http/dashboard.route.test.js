@@ -134,7 +134,7 @@ function seedPosts(db) {
   return { member, olderPost, newerPost };
 }
 
-test('GET / defaults to most-recent-first and offers no order/sort control', async () => {
+test('GET / defaults to preview-first, most-recent-first and offers no order/sort control', async () => {
   const { app, close, db } = buildApp();
   try {
     seedPosts(db);
@@ -142,7 +142,10 @@ test('GET / defaults to most-recent-first and offers no order/sort control', asy
     assert.equal(res.status, 200);
     const okrIndex = res.text.indexOf('okr-season-7391');
     const unattributedIndex = res.text.indexOf('unattributed-share');
-    assert.ok(unattributedIndex < okrIndex, 'most-recently-shared post should render first by default');
+    // okr-season has a preview (preview_author set); unattributed-share has
+    // none -- preview availability outranks recency, so okr-season leads
+    // even though it's the older of the two.
+    assert.ok(okrIndex < unattributedIndex, 'the post with a preview should render first, ahead of the newer no-preview post');
     // The share-count sort was removed (it ranked self-promotion, not
     // endorsement): no Order toggle and no most_shared option are rendered.
     assert.doesNotMatch(res.text, /data-testid="sort-toggle"/);
@@ -152,12 +155,12 @@ test('GET / defaults to most-recent-first and offers no order/sort control', asy
   }
 });
 
-test('GET /?sort=most_shared is ignored and still orders most-recent-first', async () => {
+test('GET /?sort=most_shared is ignored and still orders preview-first, most-recent-first', async () => {
   const { app, close, db } = buildApp();
   try {
     seedPosts(db);
     // Give the older post extra shares; a share-count sort would float it, but
-    // that sort no longer exists, so recency must still win.
+    // that sort no longer exists, so the preview/recency order must still win.
     db.prepare(
       `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES ((SELECT id FROM posts WHERE canonical_url LIKE '%okr-season%'), 'group-a', '+91 1', '2026-09-02T00:00:00.000Z')`
     ).run();
@@ -166,7 +169,7 @@ test('GET /?sort=most_shared is ignored and still orders most-recent-first', asy
     assert.equal(res.status, 200);
     const okrIndex = res.text.indexOf('okr-season-7391');
     const unattributedIndex = res.text.indexOf('unattributed-share');
-    assert.ok(unattributedIndex < okrIndex, 'recency still wins; ?sort=most_shared has no effect');
+    assert.ok(okrIndex < unattributedIndex, 'preview/recency order still wins; ?sort=most_shared has no effect');
   } finally {
     close();
   }
