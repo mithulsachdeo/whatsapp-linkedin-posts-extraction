@@ -108,7 +108,7 @@ function renderOtherLinkedInItems(items) {
           <span class="tag tag-sepia">Not a post</span>
           <div style="flex:1 1 260px;min-width:0">
             <div class="headline headline-sm" style="word-break:break-all">${esc(item.url)}</div>
-            <div class="meta">Passed along by ${esc(item.rawSender)}</div>
+            <div class="meta">by ${esc(item.rawSender)}</div>
           </div>
         </div>
         <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
