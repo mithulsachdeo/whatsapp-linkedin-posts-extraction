@@ -1,24 +1,23 @@
-// The review screen ("byline desk") in the Industry_new2 idiom. Three queues:
-// UNKNOWN_SENDER (assign a byline), OTHER_LINKEDIN (confirm/promote a non-post
-// link) and UNRESOLVED_SHORT_LINK (paste the real URL or dismiss). Every
-// action retroactively flows through the shared pipeline; each toast's Undo
-// reverses exactly the action it is showing. All copy and form actions are
-// preserved verbatim from the pre-reskin version -- the route tests assert on
-// them.
+// The review screen ("byline desk") in the Industry_new2 idiom. Two queues:
+// UNKNOWN_SENDER (assign a byline) and OTHER_LINKEDIN (confirm/promote a
+// non-post link). A lnkd.in short link is no longer a review-queue concern
+// (ticket #11): it is a Post from the moment it's ingested, so it never
+// appears here. Every action retroactively flows through the shared
+// pipeline; each toast's Undo reverses exactly the action it is showing. All
+// copy and form actions are preserved verbatim from the pre-reskin version --
+// the route tests assert on them.
 import { esc } from './layout.js';
 
 /**
- * @param {{ items: Array<object>, members: Array<object>, otherLinkedInItems: Array<object>, shortLinkItems: Array<object> }} data
+ * @param {{ items: Array<object>, members: Array<object>, otherLinkedInItems: Array<object> }} data
  * @param {{
  *   toast?: { rawSender: string, memberName: string, createdMemberId: number|null } | null,
  *   otherLinkedInToast?: { action: 'dismissed'|'promoted', id: number, url: string } | null,
- *   shortLinkToast?: { action: 'dismissed'|'resolved', id: number, url: string } | null,
- *   shortLinkError?: { id: number } | null,
  * }} [params]
  */
 export function renderReviewPage(
-  { items, members, otherLinkedInItems = [], shortLinkItems = [] },
-  { toast, otherLinkedInToast, shortLinkToast, shortLinkError } = {}
+  { items, members, otherLinkedInItems = [] },
+  { toast, otherLinkedInToast } = {}
 ) {
   return `
     <div style="max-width:860px">
@@ -34,11 +33,6 @@ export function renderReviewPage(
       <p class="standfirst" style="max-width:60ch">Profile, company, and job links the classifier flagged as not a post. They are never shown on the board. Dismiss to confirm, or promote if the classifier got it wrong.</p>
       ${otherLinkedInToast ? renderOtherLinkedInToast(otherLinkedInToast) : ''}
       ${otherLinkedInItems.length === 0 ? renderOtherLinkedInEmpty() : renderOtherLinkedInItems(otherLinkedInItems)}
-
-      <h2 class="headline headline-md" style="margin:var(--space-8) 0 var(--space-2)">Unresolved short links</h2>
-      <p class="standfirst" style="max-width:60ch">lnkd.in links that failed to resolve at import. Paste the real LinkedIn URL to recover one, or dismiss it.</p>
-      ${shortLinkToast ? renderShortLinkToast(shortLinkToast) : ''}
-      ${shortLinkItems.length === 0 ? renderShortLinkEmpty() : renderShortLinkItems(shortLinkItems, shortLinkError)}
     </div>
   `;
 }
@@ -150,53 +144,6 @@ function renderOtherLinkedInToast({ action, id, url }) {
     <div role="status" class="toast" data-testid="other-linkedin-toast" style="margin-top:var(--space-4)">
       <span class="toast-text"><span class="toast-label">Correction</span>${message}</span>
       <form method="post" action="/review/other/${id}/undo" style="margin:0">
-        <button type="submit" class="btn">Undo</button>
-      </form>
-    </div>`;
-}
-
-function renderShortLinkItems(items, shortLinkError) {
-  const cards = items
-    .map((item) => {
-      const showError = shortLinkError?.id === item.id;
-      const inner = `
-        <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
-          <span class="tag tag-sepia">Unresolved</span>
-          <div style="flex:1 1 260px;min-width:0">
-            <div class="headline headline-sm" style="word-break:break-all">${esc(item.url)}</div>
-            <div class="meta">Passed along by ${esc(item.rawSender)}</div>
-          </div>
-        </div>
-        ${showError ? '<p role="alert" style="margin:0;color:var(--color-accent-text);font:600 var(--text-sm)/1.4 var(--font-ui)">That doesn\'t look like a LinkedIn URL. Paste the full resolved link.</p>' : ''}
-        <form method="post" action="/review/short/${item.id}/resolve" style="display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center">
-          <input class="input" type="url" name="resolvedUrl" placeholder="https://www.linkedin.com/posts/..." aria-label="Resolved URL for ${esc(item.url)}" style="flex:1 1 280px" />
-          <button type="submit" class="btn btn-ink btn-sm">Save</button>
-        </form>
-        <form method="post" action="/review/short/${item.id}/dismiss" style="margin:0">
-          <button type="submit" class="btn btn-sm">Dismiss</button>
-        </form>`;
-      return noticeCard(inner, 'short-link-item');
-    })
-    .join('');
-
-  return queueWrap(cards);
-}
-
-function renderShortLinkEmpty() {
-  return `
-    <div data-testid="short-link-empty" class="empty">
-      <div class="kicker">All clear</div>
-      <h3 class="headline headline-md" style="margin:var(--space-2) 0">No unresolved short links</h3>
-      <p class="standfirst" style="max-width:52ch">lnkd.in links that fail to resolve from future imports will appear here.</p>
-    </div>`;
-}
-
-function renderShortLinkToast({ action, id, url }) {
-  const message = action === 'resolved' ? `${esc(url)} resolved and added to the board.` : `${esc(url)} dismissed.`;
-  return `
-    <div role="status" class="toast" data-testid="short-link-toast" style="margin-top:var(--space-4)">
-      <span class="toast-text"><span class="toast-label">Correction</span>${message}</span>
-      <form method="post" action="/review/short/${id}/undo" style="margin:0">
         <button type="submit" class="btn">Undo</button>
       </form>
     </div>`;

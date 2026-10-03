@@ -5,9 +5,10 @@
 // over a real network).
 //
 // NullShortLinkResolver is ingest()'s own default: it never makes a network
-// call and always "fails," so ingestion is offline-safe -- and every lnkd.in
-// link falls to the UNRESOLVED_SHORT_LINK review queue -- unless a caller
-// explicitly wires in a real resolver. The live app wires
+// call and always "fails," so ingestion is offline-safe -- every lnkd.in
+// link still becomes a Post synchronously (ticket #11), just one that stays
+// URL-only forever since there is no resolver to enhance it -- unless a
+// caller explicitly wires in a real resolver. The live app wires
 // HttpShortLinkResolver in server.js.
 export const NullShortLinkResolver = {
   async resolve() {

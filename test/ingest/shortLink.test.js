@@ -1,20 +1,61 @@
-// lnkd.in short-link resolution (ticket #6). Primary seam per the spec's
-// testing decision: ShortLinkResolver is stubbed at its boundary, exercised
+// lnkd.in short links (ticket #11): a short link is now a POST created
+// synchronously at ingest -- URL-only until resolution succeeds -- exercised
 // through ingest() and asserted via the public query API plus direct
-// review_items reads, mirroring previewFetch.test.js's pattern. Resolution is
-// best-effort and non-blocking (spec): ingest() itself returns synchronously;
-// `shortLinkResolutionsSettled` lets tests await deterministic completion.
+// review_items/posts/sharing_events reads, mirroring previewFetch.test.js's
+// pattern. Resolution is a best-effort async enhancer, after commit, one
+// attempt per newly-created lnkd.in post; it never blocks ingest() and never
+// falls back to a review item on failure.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/testDb.js';
 import { ingest } from '../../src/ingest/ingest.js';
 import { getDashboard } from '../../src/query/dashboard.js';
-import { getOtherLinkedInReviewItems, getUnresolvedShortLinkReviewItems } from '../../src/query/review.js';
+import { getOtherLinkedInReviewItems } from '../../src/query/review.js';
 
 const GROUP = 'group-a';
 const SHORT_URL = 'https://lnkd.in/abc123';
 
-test('a short link that resolves to a post is reclassified into the normal dedup/attribution path', async () => {
+test('a lnkd.in link creates a Post synchronously, URL-only, with no resolver configured', () => {
+  const { db, close } = createTestDb();
+  try {
+    const text = `30/09/26, 10:15 - Priya Sharma: Worth a read ${SHORT_URL}`;
+    const result = ingest(db, text, GROUP); // no shortLinkResolver supplied
+
+    assert.equal(result.linksFound, 1);
+    assert.equal(result.newPosts, 1);
+    assert.equal(result.newSharingEvents, 1);
+
+    const dashboard = getDashboard(db);
+    assert.equal(dashboard.posts.length, 1);
+    assert.equal(dashboard.posts[0].url, SHORT_URL);
+    assert.equal(dashboard.posts[0].shareCount, 1);
+    assert.equal(dashboard.posts[0].previewAuthor, null);
+  } finally {
+    close();
+  }
+});
+
+test('re-importing the same export dedupes on the lnkd.in canonical URL', () => {
+  const { db, close } = createTestDb();
+  try {
+    const text = `30/09/26, 10:15 - Priya Sharma: ${SHORT_URL}`;
+
+    const first = ingest(db, text, GROUP);
+    const second = ingest(db, text, GROUP);
+
+    assert.equal(first.newPosts, 1);
+    assert.equal(second.newPosts, 0);
+    assert.equal(second.alreadyOnBoard, 1);
+
+    const dashboard = getDashboard(db);
+    assert.equal(dashboard.posts.length, 1);
+    assert.equal(dashboard.posts[0].shareCount, 1); // byte-identical re-import: no new sharing event
+  } finally {
+    close();
+  }
+});
+
+test('a short link that resolves to a post, where no post for that canonical exists yet, re-keys the interim post in place', async () => {
   const { db, close } = createTestDb();
   try {
     const member = db.prepare('INSERT INTO members (display_name) VALUES (?)').run('Priya Sharma');
@@ -31,27 +72,98 @@ test('a short link that resolves to a post is reclassified into the normal dedup
       },
     };
 
-    const text = `30/09/26, 10:15 - Priya Sharma: Worth a read ${SHORT_URL}`;
+    const text = `30/09/26, 10:15 - Priya Sharma: ${SHORT_URL}`;
     const result = ingest(db, text, GROUP, { shortLinkResolver });
 
-    assert.equal(result.linksFound, 1);
-    // Not yet known synchronously -- resolution is non-blocking.
-    assert.equal(result.newPosts, 0);
-
+    const interimPostId = db.prepare('SELECT id FROM posts').get().id;
     await result.shortLinkResolutionsSettled;
 
     const dashboard = getDashboard(db);
     assert.equal(dashboard.posts.length, 1);
+    assert.equal(dashboard.posts[0].id, interimPostId); // same row, re-keyed
     assert.equal(dashboard.posts[0].url, resolvedUrl);
     assert.equal(dashboard.posts[0].shareCount, 1);
     assert.equal(dashboard.posts[0].pendingAttribution, false);
-    assert.equal(getUnresolvedShortLinkReviewItems(db).length, 0);
   } finally {
     close();
   }
 });
 
-test('a short link that resolves to a non-post LinkedIn URL is reclassified as OTHER_LINKEDIN', async () => {
+test('a short link that resolves to a post, where a post for that canonical already exists, merges the sharing events and deletes the interim post', async () => {
+  const { db, close } = createTestDb();
+  try {
+    const resolvedUrl = 'https://www.linkedin.com/posts/priya-sharma_activity-1-abcd';
+    const existingText = `29/09/26, 09:00 - Arjun Das: ${resolvedUrl}`;
+    ingest(db, existingText, GROUP);
+    const existingPostId = db.prepare('SELECT id FROM posts').get().id;
+
+    const shortLinkResolver = { async resolve() { return resolvedUrl; } };
+    const shortText = `30/09/26, 10:15 - Priya Sharma: ${SHORT_URL}`;
+    const result = ingest(db, shortText, GROUP, { shortLinkResolver });
+    const interimPostId = db.prepare("SELECT id FROM posts WHERE canonical_url = ?").get(SHORT_URL).id;
+
+    await result.shortLinkResolutionsSettled;
+
+    const dashboard = getDashboard(db);
+    assert.equal(dashboard.posts.length, 1);
+    assert.equal(dashboard.posts[0].id, existingPostId);
+    assert.equal(dashboard.posts[0].url, resolvedUrl);
+    assert.equal(dashboard.posts[0].shareCount, 2); // both events now on the one post
+
+    const interim = db.prepare('SELECT * FROM posts WHERE id = ?').get(interimPostId);
+    assert.equal(interim, undefined); // interim post removed
+  } finally {
+    close();
+  }
+});
+
+test('merging moves sharing events but skips one that would collide with an existing event on the target post', async () => {
+  const { db, close } = createTestDb();
+  try {
+    const resolvedUrl = 'https://www.linkedin.com/posts/priya-sharma_activity-1-abcd';
+    // Same (group, timestamp, raw_sender) already shared the resolved URL directly.
+    const existingText = `30/09/26, 10:15 - Priya Sharma: ${resolvedUrl}`;
+    ingest(db, existingText, GROUP);
+
+    const shortLinkResolver = { async resolve() { return resolvedUrl; } };
+    const shortText = `30/09/26, 10:15 - Priya Sharma: ${SHORT_URL}`;
+    const result = ingest(db, shortText, GROUP, { shortLinkResolver });
+    await result.shortLinkResolutionsSettled;
+
+    const dashboard = getDashboard(db);
+    assert.equal(dashboard.posts.length, 1);
+    assert.equal(dashboard.posts[0].shareCount, 1); // the colliding duplicate event was dropped, not doubled
+  } finally {
+    close();
+  }
+});
+
+test('resolution runs the best-effort preview fetch on the resolved URL', async () => {
+  const { db, close } = createTestDb();
+  try {
+    const resolvedUrl = 'https://www.linkedin.com/posts/priya-sharma_activity-1-abcd';
+    const shortLinkResolver = { async resolve() { return resolvedUrl; } };
+    let fetchedUrl = null;
+    const previewFetcher = {
+      async fetch(url) {
+        fetchedUrl = url;
+        return { author: 'Priya Sharma', role: null, excerpt: 'Worth a read.' };
+      },
+    };
+
+    const text = `30/09/26, 10:15 - Priya Sharma: ${SHORT_URL}`;
+    const result = ingest(db, text, GROUP, { shortLinkResolver, previewFetcher });
+    await result.shortLinkResolutionsSettled;
+
+    assert.equal(fetchedUrl, resolvedUrl);
+    const dashboard = getDashboard(db);
+    assert.equal(dashboard.posts[0].previewAuthor, 'Priya Sharma');
+  } finally {
+    close();
+  }
+});
+
+test('a short link that resolves to a non-post LinkedIn URL is reclassified as OTHER_LINKEDIN and leaves the Posts tab', async () => {
   const { db, close } = createTestDb();
   try {
     const resolvedUrl = 'https://www.linkedin.com/in/priya-sharma';
@@ -59,6 +171,8 @@ test('a short link that resolves to a non-post LinkedIn URL is reclassified as O
 
     const text = `30/09/26, 10:15 - Priya Sharma: ${SHORT_URL}`;
     const result = ingest(db, text, GROUP, { shortLinkResolver });
+    const interimPostId = db.prepare('SELECT id FROM posts').get().id;
+
     await result.shortLinkResolutionsSettled;
 
     const dashboard = getDashboard(db);
@@ -68,13 +182,15 @@ test('a short link that resolves to a non-post LinkedIn URL is reclassified as O
     assert.equal(otherItems.length, 1);
     assert.equal(otherItems[0].url, resolvedUrl);
     assert.equal(otherItems[0].rawSender, 'Priya Sharma');
-    assert.equal(getUnresolvedShortLinkReviewItems(db).length, 0);
+
+    const interim = db.prepare('SELECT * FROM posts WHERE id = ?').get(interimPostId);
+    assert.equal(interim, undefined);
   } finally {
     close();
   }
 });
 
-test('a short link that fails to resolve creates an UNRESOLVED_SHORT_LINK review item', async () => {
+test('a resolver that fails to resolve (returns null) leaves the lnkd.in post shown, URL-only, on the board', async () => {
   const { db, close } = createTestDb();
   try {
     const shortLinkResolver = { async resolve() { return null; } };
@@ -84,60 +200,65 @@ test('a short link that fails to resolve creates an UNRESOLVED_SHORT_LINK review
     await result.shortLinkResolutionsSettled;
 
     const dashboard = getDashboard(db);
-    assert.equal(dashboard.posts.length, 0);
+    assert.equal(dashboard.posts.length, 1);
+    assert.equal(dashboard.posts[0].url, SHORT_URL);
+    assert.equal(dashboard.posts[0].previewAuthor, null);
 
-    const items = getUnresolvedShortLinkReviewItems(db);
-    assert.equal(items.length, 1);
-    assert.equal(items[0].url, SHORT_URL);
-    assert.equal(items[0].rawSender, 'Priya Sharma');
+    // Priya Sharma has no alias in this test, so the sharing event itself
+    // still produces an UNKNOWN_SENDER item exactly as ingest() always does --
+    // that is unrelated to short-link resolution. What must never appear is
+    // an OTHER_LINKEDIN (or any other) item caused by the failed resolve.
+    const nonAttributionItems = db.prepare("SELECT * FROM review_items WHERE kind != 'UNKNOWN_SENDER'").all();
+    assert.equal(nonAttributionItems.length, 0); // never falls to review
   } finally {
     close();
   }
 });
 
-test('a resolver that throws also creates an UNRESOLVED_SHORT_LINK review item, without failing ingestion', async () => {
+test('a resolver that throws also leaves the lnkd.in post shown, URL-only, without failing ingestion', async () => {
   const { db, close } = createTestDb();
   try {
     const shortLinkResolver = { async resolve() { throw new Error('timed out'); } };
 
     const text = `30/09/26, 10:15 - Priya Sharma: ${SHORT_URL}`;
     const result = ingest(db, text, GROUP, { shortLinkResolver });
-    assert.equal(result.newSharingEvents, 0); // resolution is non-blocking; ingest itself still succeeds
+    assert.equal(result.newSharingEvents, 1); // ingest itself succeeds synchronously
 
     await result.shortLinkResolutionsSettled;
 
-    assert.equal(getUnresolvedShortLinkReviewItems(db).length, 1);
+    const dashboard = getDashboard(db);
+    assert.equal(dashboard.posts.length, 1);
+    assert.equal(dashboard.posts[0].url, SHORT_URL);
+
+    // Priya Sharma has no alias in this test, so the sharing event itself
+    // still produces an UNKNOWN_SENDER item exactly as ingest() always does --
+    // that is unrelated to short-link resolution.
+    const nonAttributionItems = db.prepare("SELECT * FROM review_items WHERE kind != 'UNKNOWN_SENDER'").all();
+    assert.equal(nonAttributionItems.length, 0);
   } finally {
     close();
   }
 });
 
-test('ingest defaults to a safe, no-network resolver that falls every short link to review', async () => {
+test('resolution is attempted only once per newly-created lnkd.in post, not again when the post already exists', async () => {
   const { db, close } = createTestDb();
   try {
+    let calls = 0;
+    const shortLinkResolver = {
+      async resolve() {
+        calls++;
+        return null;
+      },
+    };
+
     const text = `30/09/26, 10:15 - Priya Sharma: ${SHORT_URL}`;
-    const result = ingest(db, text, GROUP); // no shortLinkResolver supplied
-
-    await result.shortLinkResolutionsSettled;
-
-    assert.equal(getUnresolvedShortLinkReviewItems(db).length, 1);
-  } finally {
-    close();
-  }
-});
-
-test('re-importing the same export produces no duplicate UNRESOLVED_SHORT_LINK review items', async () => {
-  const { db, close } = createTestDb();
-  try {
-    const shortLinkResolver = { async resolve() { return null; } };
-    const text = `30/09/26, 10:15 - Priya Sharma: ${SHORT_URL}`;
-
     const first = ingest(db, text, GROUP, { shortLinkResolver });
     await first.shortLinkResolutionsSettled;
-    const second = ingest(db, text, GROUP, { shortLinkResolver });
+
+    const second = ingest(db, text, GROUP, { shortLinkResolver }); // byte-identical re-import, no new post
     await second.shortLinkResolutionsSettled;
 
-    assert.equal(getUnresolvedShortLinkReviewItems(db).length, 1);
+    assert.equal(calls, 1);
   } finally {
     close();
   }

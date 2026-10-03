@@ -98,6 +98,25 @@ export function canonicalizeAnyLinkedInUrl(raw) {
   return `https://www.linkedin.com${pathname}`;
 }
 
+/**
+ * Canonicalizes an `lnkd.in` short link into its dedup key -- the Post's
+ * canonical_url while it is still an unresolved interim POST (ticket #11):
+ * lowercased host + path, with tracking query/fragment noise stripped. Keeps
+ * the same shape as canonicalizeUrl/canonicalizeAnyLinkedInUrl so re-import
+ * stays idempotent on (group, timestamp, raw_sender, canonical_url).
+ * @param {string} raw
+ * @returns {string|null} canonical lnkd.in URL, or null if not an lnkd.in URL
+ */
+export function canonicalizeShortLinkUrl(raw) {
+  const url = tryParseUrl(raw);
+  if (!url || !isShortLinkUrl(raw)) return null;
+
+  let pathname = url.pathname.replace(/\/+$/, '');
+  if (!pathname.startsWith('/')) pathname = '/' + pathname;
+
+  return `https://lnkd.in${pathname}`;
+}
+
 function tryParseUrl(raw) {
   try {
     return new URL(raw);

@@ -7,9 +7,16 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { backfillUnresolvedShortLinks } from './backfillUnresolvedShortLinks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_MIGRATIONS_DIR = path.join(__dirname, 'migrations');
+
+// Ledger name for the one-time UNRESOLVED_SHORT_LINK backfill (ticket #11).
+// Not a .sql file on disk -- the per-row logic isn't portable SQL -- but
+// recorded in the same schema_migrations ledger so it still runs exactly
+// once across every DB, same as a real migration file would.
+const BACKFILL_SHORT_LINKS_NAME = '0003_backfill_unresolved_short_links';
 
 /**
  * Apply any migrations in `migrationsDir` not yet recorded as applied.
@@ -48,5 +55,19 @@ export function migrate(db, migrationsDir = DEFAULT_MIGRATIONS_DIR) {
     }
     newlyApplied.push(file);
   }
+
+  if (!applied.has(BACKFILL_SHORT_LINKS_NAME)) {
+    // Not wrapped in an outer BEGIN/COMMIT: backfillUnresolvedShortLinks
+    // manages its own transaction per review item (SQLite has no nested
+    // transactions).
+    try {
+      backfillUnresolvedShortLinks(db);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(BACKFILL_SHORT_LINKS_NAME);
+    } catch (err) {
+      throw new Error(`Migration ${BACKFILL_SHORT_LINKS_NAME} failed: ${err.message}`, { cause: err });
+    }
+    newlyApplied.push(BACKFILL_SHORT_LINKS_NAME);
+  }
+
   return newlyApplied;
 }

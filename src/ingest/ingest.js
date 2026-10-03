@@ -5,7 +5,13 @@
 // has turned an upload into decoded text.
 import { createHash } from 'node:crypto';
 import { parseMessages } from './parseChat.js';
-import { extractLinkedInUrls, classifyLinkedInUrl, canonicalizeUrl, canonicalizeAnyLinkedInUrl } from './linkedin.js';
+import {
+  extractLinkedInUrls,
+  classifyLinkedInUrl,
+  canonicalizeUrl,
+  canonicalizeAnyLinkedInUrl,
+  canonicalizeShortLinkUrl,
+} from './linkedin.js';
 import { NullPreviewFetcher } from '../preview/previewFetcher.js';
 import { cacheFetchedPreview, markPreviewUnavailable } from '../preview/previewCache.js';
 import { NullShortLinkResolver } from './shortLinkResolver.js';
@@ -53,12 +59,12 @@ export function ingest(db, rawExportText, groupId, options = {}) {
   const pendingAttributionSenders = new Set();
   // One best-effort preview fetch per NEW post (spec), fired after commit.
   const newPostFetchTargets = [];
-  // One best-effort redirect-resolve per lnkd.in short link (spec), fired
-  // after commit -- a short link's identity (post vs other vs unresolved) is
-  // unknown until it resolves, so unlike OTHER_LINKEDIN/POST links it writes
-  // nothing synchronously; shortLinkResolutionsSettled lets a caller await
-  // the eventual outcome.
-  const shortLinkTargets = [];
+  // One best-effort redirect-resolve per newly-created lnkd.in interim post
+  // (spec), fired after commit -- resolution is a best-effort enhancer, not
+  // a gate: the lnkd.in URL is already a real Post by the time this queue is
+  // built, so a caller that never awaits shortLinkResolutionsSettled still
+  // sees it on the board, URL-only.
+  const shortLinkResolveTargets = [];
 
   db.exec('BEGIN');
   try {
@@ -66,19 +72,6 @@ export function ingest(db, rawExportText, groupId, options = {}) {
       const urls = extractLinkedInUrls(message.text);
       for (const rawUrl of urls) {
         const kind = classifyLinkedInUrl(rawUrl);
-        if (kind === 'SHORT_LINK') {
-          linksFound++;
-          // lnkd.in short link: identity unknown until resolved. Queued for
-          // the post-commit resolve pass below.
-          shortLinkTargets.push({
-            rawUrl,
-            rawSender: message.rawSender,
-            timestamp: message.timestamp,
-            groupId,
-            note: message.text.trim() || null,
-          });
-          continue;
-        }
 
         if (kind === 'OTHER_LINKEDIN') {
           linksFound++;
@@ -95,14 +88,24 @@ export function ingest(db, rawExportText, groupId, options = {}) {
           continue;
         }
 
-        const canonicalUrl = canonicalizeUrl(rawUrl);
-        if (!canonicalUrl) continue; // defensive; classifyLinkedInUrl already filtered to POST
+        if (kind !== 'POST' && kind !== 'SHORT_LINK') continue; // not a recognizable LinkedIn/short-link URL
+
+        // A lnkd.in short link is now a POST in its own right (spec): created
+        // synchronously, same as a direct linkedin.com post URL, just keyed
+        // on the lnkd.in canonical until/unless resolution re-keys or merges
+        // it. It renders URL-only until that resolution succeeds.
+        const canonicalUrl = kind === 'SHORT_LINK' ? canonicalizeShortLinkUrl(rawUrl) : canonicalizeUrl(rawUrl);
+        if (!canonicalUrl) continue; // defensive; classifyLinkedInUrl already filtered to POST/SHORT_LINK
         linksFound++;
 
         const { id: postId, isNew } = upsertPost(db, canonicalUrl);
         if (isNew) {
           newPosts++;
-          newPostFetchTargets.push({ postId, canonicalUrl });
+          if (kind === 'POST') {
+            newPostFetchTargets.push({ postId, canonicalUrl });
+          } else {
+            shortLinkResolveTargets.push({ postId, shortUrl: canonicalUrl });
+          }
         } else {
           alreadyOnBoard++;
         }
@@ -160,17 +163,21 @@ export function ingest(db, rawExportText, groupId, options = {}) {
     ).then(() => undefined);
 
     // Same after-commit, never-blocks-ingestion shape as the preview-fetch
-    // pass above. Success reclassifies the resolved URL through the exact
-    // same classify/canonicalize/dedup path a directly-shared URL would take
-    // (spec); failure -- a thrown rejection or a resolver returning no
-    // location -- creates an UNRESOLVED_SHORT_LINK review item instead.
+    // pass above, but a best-effort *enhancer* rather than a gate (spec): the
+    // lnkd.in URL is already a real Post by the time this queue is built, so
+    // a thrown rejection or a resolver returning no URL simply leaves that
+    // Post exactly as it is -- URL-only, still on the board. Success merges
+    // the resolved URL into an existing Post (if one already has that
+    // canonical) or re-keys this interim Post in place, then runs the normal
+    // best-effort preview fetch; resolving to a non-post reclassifies this
+    // Post into an OTHER_LINKEDIN review item instead.
     const shortLinkResolutionsSettled = Promise.all(
-      shortLinkTargets.map((target) =>
+      shortLinkResolveTargets.map((target) =>
         Promise.resolve()
-          .then(() => shortLinkResolver.resolve(target.rawUrl))
+          .then(() => shortLinkResolver.resolve(target.shortUrl))
           .then(
-            (resolvedUrl) => applyResolvedShortLink(db, target, resolvedUrl),
-            () => ensureUnresolvedShortLinkReviewItem(db, target)
+            (resolvedUrl) => applyShortLinkResolution(db, target, resolvedUrl, previewFetcher),
+            () => {} // resolver threw -- never-resolved Post stays as-is, never falls to review
           )
           .catch(() => {})
       )
@@ -250,86 +257,119 @@ export function ensureOtherLinkedInReviewItem(db, { url, rawSender, timestamp, g
   );
 }
 
-// One UNRESOLVED_SHORT_LINK review item per (group, timestamp, sender, url)
-// -- same dedup shape as ensureOtherLinkedInReviewItem, for the same reason
-// (re-importing the same or overlapping export must never duplicate it).
-export function ensureUnresolvedShortLinkReviewItem(db, { rawUrl, rawSender, timestamp, groupId, note }) {
-  const existing = db
-    .prepare(
-      `SELECT id FROM review_items
-       WHERE kind = 'UNRESOLVED_SHORT_LINK'
-         AND json_extract(payload, '$.url') = ?
-         AND json_extract(payload, '$.rawSender') = ?
-         AND json_extract(payload, '$.timestamp') = ?
-         AND json_extract(payload, '$.groupId') = ?`
-    )
-    .get(rawUrl, rawSender, timestamp, groupId);
-  if (existing) return;
+// Applies a lnkd.in interim Post's resolution outcome (spec, ticket #11):
+// a resolver failure or an unusable resolved value (anything that isn't a
+// recognizable POST or OTHER_LINKEDIN URL) is a no-op -- the interim Post
+// stays exactly as it is, URL-only, never falling to a review item. A POST
+// resolution merges into an existing Post of that canonical (moving sharing
+// events, dropping any that would collide on the natural key) or re-keys
+// this interim Post in place if no such Post exists yet, then runs the
+// normal best-effort preview fetch on the resolved URL. An OTHER_LINKEDIN
+// resolution reclassifies every sharing event this interim Post is carrying
+// into that review queue and removes the interim Post.
+async function applyShortLinkResolution(db, target, resolvedUrl, previewFetcher) {
+  if (!resolvedUrl) return; // failed to resolve -- leave the Post as-is
 
-  db.prepare("INSERT INTO review_items (kind, payload) VALUES ('UNRESOLVED_SHORT_LINK', ?)").run(
-    JSON.stringify({ url: rawUrl, rawSender, timestamp, groupId, note })
-  );
-}
-
-// Applies a short link's resolved URL (or lack of one) exactly as if that
-// URL had been shared directly (spec: "the resolved URL is reclassified").
-// Shared by ingest()'s post-commit resolve pass and the review queue's
-// paste-the-resolved-URL action (src/review/shortLink.js), mirroring how
-// promoteOtherLinkedInItem reuses ingest()'s own primitives.
-export function applyResolvedShortLink(db, target, resolvedUrl) {
-  const kind = resolvedUrl ? classifyLinkedInUrl(resolvedUrl) : null;
+  const kind = classifyLinkedInUrl(resolvedUrl);
 
   if (kind === 'POST') {
     const canonicalUrl = canonicalizeUrl(resolvedUrl);
-    if (canonicalUrl) {
-      db.exec('BEGIN');
-      try {
-        const { id: postId, isNew } = upsertPost(db, canonicalUrl);
+    if (!canonicalUrl) return; // defensive; classifyLinkedInUrl already filtered to POST
 
-        const memberId = resolveMember(db, target.rawSender);
-        if (memberId === null) {
-          ensureUnknownSenderReviewItem(db, target.rawSender);
-        }
+    const finalPostId = mergeOrRekeyShortLinkPost(db, target.postId, canonicalUrl);
 
-        const inserted = insertSharingEvent(db, {
-          postId,
-          groupId: target.groupId,
-          rawSender: target.rawSender,
-          memberId,
-          timestamp: target.timestamp,
-          note: target.note,
-        });
-        if (inserted) touchPostTimestamps(db, postId, target.timestamp);
-
-        db.exec('COMMIT');
-        return { kind: 'POST', postId, postWasNew: isNew, sharingEventInserted: inserted };
-      } catch (err) {
-        db.exec('ROLLBACK');
-        throw err;
-      }
+    const preview = await Promise.resolve()
+      .then(() => previewFetcher.fetch(canonicalUrl))
+      .then(
+        (result) => ({ ok: true, result }),
+        () => ({ ok: false })
+      )
+      .catch(() => ({ ok: false }));
+    if (preview.ok) {
+      cacheFetchedPreview(db, finalPostId, preview.result ?? {});
+    } else {
+      markPreviewUnavailable(db, finalPostId);
     }
-  } else if (kind === 'OTHER_LINKEDIN') {
-    ensureOtherLinkedInReviewItem(db, {
-      url: canonicalizeAnyLinkedInUrl(resolvedUrl) ?? resolvedUrl,
-      rawSender: target.rawSender,
-      timestamp: target.timestamp,
-      groupId: target.groupId,
-      note: target.note,
-    });
-    return { kind: 'OTHER_LINKEDIN' };
+    return;
   }
 
-  // No resolvedUrl, or it resolved to something unusable (another short
-  // link, or not a linkedin.com URL at all) -- fall to review exactly as a
-  // failed HTTP resolve would.
-  ensureUnresolvedShortLinkReviewItem(db, {
-    rawUrl: target.rawUrl,
-    rawSender: target.rawSender,
-    timestamp: target.timestamp,
-    groupId: target.groupId,
-    note: target.note,
-  });
-  return { kind: 'UNRESOLVED_SHORT_LINK' };
+  if (kind === 'OTHER_LINKEDIN') {
+    reclassifyShortLinkPostAsOtherLinkedIn(db, target.postId, resolvedUrl);
+    return;
+  }
+
+  // Resolved to something else unusable (another short link, a non-LinkedIn
+  // URL, ...) -- treated the same as a failed resolve: do nothing.
+}
+
+// Merges an interim lnkd.in Post into an existing Post sharing the resolved
+// canonical URL (moving its sharing events over, skipping any that would
+// collide with the target's own on the natural key, then deleting the
+// now-empty interim Post), or -- if no such Post exists -- re-keys the
+// interim Post's own canonical_url in place. Returns the id of whichever
+// Post row now holds the resolved identity.
+export function mergeOrRekeyShortLinkPost(db, interimPostId, canonicalUrl) {
+  const existing = db
+    .prepare('SELECT id FROM posts WHERE canonical_url = ? AND id != ?')
+    .get(canonicalUrl, interimPostId);
+
+  if (!existing) {
+    db.prepare('UPDATE posts SET canonical_url = ? WHERE id = ?').run(canonicalUrl, interimPostId);
+    return interimPostId;
+  }
+
+  const targetPostId = existing.id;
+  db.exec('BEGIN');
+  try {
+    const events = db.prepare('SELECT * FROM sharing_events WHERE post_id = ?').all(interimPostId);
+    for (const event of events) {
+      const collision = db
+        .prepare(
+          `SELECT 1 FROM sharing_events
+           WHERE post_id = ? AND group_id = ? AND raw_sender = ? AND message_timestamp = ?`
+        )
+        .get(targetPostId, event.group_id, event.raw_sender, event.message_timestamp);
+      if (collision) {
+        db.prepare('DELETE FROM sharing_events WHERE id = ?').run(event.id);
+      } else {
+        db.prepare('UPDATE sharing_events SET post_id = ? WHERE id = ?').run(targetPostId, event.id);
+        touchPostTimestamps(db, targetPostId, event.message_timestamp);
+      }
+    }
+    db.prepare('DELETE FROM posts WHERE id = ?').run(interimPostId);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return targetPostId;
+}
+
+// Reclassifies an interim lnkd.in Post as an OTHER_LINKEDIN review item:
+// every sharing event it was carrying becomes its own OTHER_LINKEDIN item
+// (mirroring how a directly-shared OTHER_LINKEDIN URL is handled, one item
+// per (group, timestamp, sender, url)), then the interim Post is removed --
+// its sharing events cascade-delete with it.
+export function reclassifyShortLinkPostAsOtherLinkedIn(db, interimPostId, resolvedUrl) {
+  const canonicalUrl = canonicalizeAnyLinkedInUrl(resolvedUrl) ?? resolvedUrl;
+  db.exec('BEGIN');
+  try {
+    const events = db.prepare('SELECT * FROM sharing_events WHERE post_id = ?').all(interimPostId);
+    for (const event of events) {
+      ensureOtherLinkedInReviewItem(db, {
+        url: canonicalUrl,
+        rawSender: event.raw_sender,
+        timestamp: event.message_timestamp,
+        groupId: event.group_id,
+        note: event.note,
+      });
+    }
+    db.prepare('DELETE FROM posts WHERE id = ?').run(interimPostId);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
 }
 
 // Natural key (group_id, message_timestamp, raw_sender, post_id) is a DB
