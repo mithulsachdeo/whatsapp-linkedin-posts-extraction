@@ -406,6 +406,26 @@ test('GET / (cards) still shows "From the archive" for a preview-unavailable pos
   }
 });
 
+// Layout spec: the left header+controls block and the right Correspondents
+// header sit in grid row 1 of a shared two-row grid (row 1 auto-sizes to the
+// taller cell, giving them equal height for free); the post-results cell and
+// the correspondent-list cell sit in grid row 2, lined up on the same row so
+// the first post and "Everyone" start on the same line.
+test('GET / lays out the results cell and the correspondent-list cell as grid-row-2 siblings', async () => {
+  const { app, close, db } = buildApp();
+  try {
+    seedPosts(db);
+    const res = await request(app).get('/');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /class="np-dashboard-grid"/);
+    assert.match(res.text, /data-testid="member-rail-head"[^>]*grid-row:1/);
+    assert.match(res.text, /data-testid="post-list-cell"[^>]*grid-row:2/);
+    assert.match(res.text, /data-testid="member-rail"[^>]*grid-row:2/);
+  } finally {
+    close();
+  }
+});
+
 test('GET /?density=rows still renders a preview-unavailable post without an author label or excerpt text', async () => {
   const { app, close, db } = buildApp();
   try {
