@@ -406,21 +406,39 @@ test('GET / (cards) still shows "From the archive" for a preview-unavailable pos
   }
 });
 
-// Layout spec: the left header+controls block and the right Correspondents
-// header sit in grid row 1 of a shared two-row grid (row 1 auto-sizes to the
-// taller cell, giving them equal height for free); the post-results cell and
-// the correspondent-list cell sit in grid row 2, lined up on the same row so
-// the first post and "Everyone" start on the same line.
-test('GET / lays out the results cell and the correspondent-list cell as grid-row-2 siblings', async () => {
+// Layout spec: the header+controls block renders as a single full-width band,
+// followed by a horizontal rule, followed by a two-up content row where the
+// post-results cell and the Correspondents rail are siblings (results on the
+// left, rail on the right).
+test('GET / lays out a full-width controls band, a rule, then the results cell and the correspondent rail as content-row siblings', async () => {
   const { app, close, db } = buildApp();
   try {
     seedPosts(db);
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
-    assert.match(res.text, /class="np-dashboard-grid"/);
-    assert.match(res.text, /data-testid="member-rail-head"[^>]*grid-row:1/);
-    assert.match(res.text, /data-testid="post-list-cell"[^>]*grid-row:2/);
-    assert.match(res.text, /data-testid="member-rail"[^>]*grid-row:2/);
+
+    const bandMatch = res.text.match(/<div data-testid="dashboard-band"[^>]*>/);
+    const ruleMatch = res.text.match(/<hr class="rule-heavy"[^>]*>/);
+    const contentRowMatch = res.text.match(/<div class="np-content-row"[^>]*>/);
+    const postCellMatch = res.text.match(/<section data-testid="post-list-cell"[^>]*>/);
+    const railMatch = res.text.match(/<aside data-testid="member-rail"[^>]*>/);
+
+    assert.ok(bandMatch, 'expected a full-width dashboard band');
+    assert.ok(ruleMatch, 'expected a rule under the band');
+    assert.ok(contentRowMatch, 'expected a content row after the rule');
+    assert.ok(postCellMatch, 'expected the post-list cell inside the content row');
+    assert.ok(railMatch, 'expected the correspondent rail inside the content row');
+
+    // Ordering: band, then rule, then content row containing both siblings.
+    assert.ok(bandMatch.index < ruleMatch.index);
+    assert.ok(ruleMatch.index < contentRowMatch.index);
+    assert.ok(contentRowMatch.index < postCellMatch.index);
+    assert.ok(postCellMatch.index < railMatch.index);
+
+    // The "Correspondents" head and the name list are recombined into one
+    // rail block (no separate member-rail-head testid anymore).
+    assert.doesNotMatch(res.text, /data-testid="member-rail-head"/);
+    assert.match(res.text, /data-testid="member-rail"[^]*?Correspondents/);
   } finally {
     close();
   }

@@ -27,24 +27,18 @@ export function renderDashboard(
     return renderEmptyState({ isAdmin, state });
   }
 
-  const railHead = renderCorrespondentsRailHead();
-  const railList = renderCorrespondentsRailList(filterOptions, activeMember, state);
+  const rail = renderCorrespondentsRail(filterOptions, activeMember, state);
   const header = renderHeader(activeMember, posts.length);
   const controls = renderControls(state, filterOptions, activeMember);
   const viewToggle = renderViewToggle(state);
   const results =
     posts.length === 0 ? renderNoResults(search, activeMember) : renderPostList(posts, density, view);
 
-  // Two-row, two-column grid: row 1 (left header+controls / right
-  // Correspondents header) auto-sizes both cells to the taller one, which is
-  // what gives the right header block equal height to the left one without a
-  // hardcoded pixel value -- the left block's height is dynamic (headline +
-  // toggle + search), so a fixed height would drift out of sync with it.
-  // Row 2 (results / correspondent list) then starts both lists on the same
-  // line because row 1 already consumed the same vertical space on each
-  // side. `position:sticky` on the rail is dropped: a grid item can't
-  // meaningfully stick within a row sized by its sibling column, so the
-  // rail now scrolls with the page (visual result otherwise unchanged).
+  // Full-width band (header + view toggle + controls) spans the container,
+  // then a rule, then a flex content row: the post list takes the freed-up
+  // width on the left (its auto-fill card grid naturally gains columns) and
+  // the Correspondents rail sits to the right at its old ~220-280px width,
+  // `position:sticky` so it stays visible while the post list scrolls.
   return `
     <style>
       [data-testid="member-select"] { display: none; }
@@ -55,31 +49,33 @@ export function renderDashboard(
       .np-toggle label:has(input:checked) { color:var(--color-text); font-weight:800; border-bottom-color:var(--color-accent); }
       .np-toggle input { position:absolute; opacity:0; width:0; height:0; }
       .np-toggle input:focus-visible + span { outline:2px solid var(--color-accent); outline-offset:3px; }
-      .np-dashboard-grid {
-        display:grid;
-        grid-template-columns:minmax(0,1fr) minmax(220px,280px);
-        grid-template-rows:auto auto;
-        column-gap:var(--space-8);
-        align-items:start;
+      .np-content-row { display:flex; gap:var(--space-8); align-items:flex-start; }
+      .np-content-row > * { min-width:0; }
+      .np-content-row [data-testid="post-list-cell"] { flex:1 1 auto; }
+      .np-content-row [data-testid="member-rail"] {
+        flex:0 1 280px;
+        min-width:220px;
+        max-width:280px;
+        position:sticky;
+        top:var(--space-6);
       }
-      .np-dashboard-grid > * { min-width:0; }
       @media (max-width: 760px) {
-        [data-testid="member-rail"], [data-testid="member-rail-head"] { display: none; }
+        [data-testid="member-rail"] { display: none; }
         [data-testid="member-select"] { display: block; }
-        .np-dashboard-grid { grid-template-columns:minmax(0,1fr); }
+        .np-content-row { display:block; }
       }
     </style>
-    <div class="np-dashboard-grid">
-      <section style="grid-column:1;grid-row:1">
-        ${header}
-        ${viewToggle}
-        ${controls}
-      </section>
-      ${railHead}
-      <section data-testid="post-list-cell" style="grid-column:1;grid-row:2">
+    <div data-testid="dashboard-band">
+      ${header}
+      ${viewToggle}
+      ${controls}
+    </div>
+    <hr class="rule-heavy">
+    <div class="np-content-row">
+      <section data-testid="post-list-cell">
         ${results}
       </section>
-      ${railList}
+      ${rail}
     </div>
   `;
 }
@@ -220,21 +216,10 @@ function renderMemberSelect(filterOptions, activeMember) {
   return `<select data-testid="member-select" class="input" name="member" aria-label="Filter by correspondent" onchange="this.form.requestSubmit()" style="flex:1 1 180px">${options.join('')}</select>`;
 }
 
-// Split from the single <aside> so the header (title + subtitle) can sit in
-// grid row 1 -- same row as the left header+controls section, auto-sized to
-// match it -- while the name list sits in row 2, lined up with the post
-// results. Both pieces keep the `member-rail`-prefixed testids and the
-// @media collapse continues to hide both on narrow screens.
-function renderCorrespondentsRailHead() {
-  return `
-    <aside data-testid="member-rail-head" style="grid-column:2;grid-row:1;border-top:var(--rule-heavy) solid var(--color-text);padding-top:var(--space-3)">
-      <h3 class="headline headline-sm" style="margin:0">Correspondents</h3>
-      <p class="standfirst" style="font-size:var(--text-sm);margin:0">Who passed along what. Select a name to read their file.</p>
-    </aside>
-  `;
-}
-
-function renderCorrespondentsRailList(filterOptions, activeMember, state) {
+// A single <aside> holding the rail head (title + subtitle) and the name
+// list together, sticky-positioned so it stays visible while the post list
+// scrolls past it in the content row.
+function renderCorrespondentsRail(filterOptions, activeMember, state) {
   const items = [
     {
       href: buildHref(state, { member: '' }),
@@ -260,7 +245,9 @@ function renderCorrespondentsRailList(filterOptions, activeMember, state) {
 
   const rows = items.map(correspondentRow).join('');
   return `
-    <aside data-testid="member-rail" style="grid-column:2;grid-row:2">
+    <aside data-testid="member-rail" style="border-top:var(--rule-heavy) solid var(--color-text);padding-top:var(--space-3)">
+      <h3 class="headline headline-sm" style="margin:0">Correspondents</h3>
+      <p class="standfirst" style="font-size:var(--text-sm);margin:0">Who passed along what. Select a name to read their file.</p>
       <div style="display:flex;flex-direction:column">${rows}</div>
     </aside>
   `;
