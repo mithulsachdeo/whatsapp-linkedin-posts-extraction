@@ -39,7 +39,7 @@ export function layout({ title, active, isAdmin, lastUpdated, body }) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${esc(title)} — The Rethinkers' Postcard</title>
+<title>${esc(title)} — The Rethinkers' Times</title>
 <link rel="stylesheet" href="/assets/styles.css" />
 </head>
 <body class="paper">
@@ -55,7 +55,7 @@ export function layout({ title, active, isAdmin, lastUpdated, body }) {
          clamp(44px,10vw,112px) size. This clamp(32px,6vw,76px) keeps it on one line
          at desktop widths (>=1200px, ~1100px usable column) without touching the
          shared .masthead-title token in Industry_new2/tokens/components.css. -->
-    <h1 class="masthead-title" style="font-size:clamp(32px,6vw,76px)">The Rethinkers' Postcard</h1>
+    <h1 class="masthead-title" style="font-size:clamp(32px,6vw,76px)">The Rethinkers' Times</h1>
     <p class="masthead-motto">Every LinkedIn post shared in the groups, printed once and credited to whoever passed it along</p>
   </div>
   <nav class="section-nav">
