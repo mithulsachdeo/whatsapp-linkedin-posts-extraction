@@ -99,8 +99,10 @@ test('motion.css defines 3D card-block vortex keyframes, 1400ms timing tokens, a
     assert.match(res.text, /@keyframes card-vortex-in-w/);
     assert.match(res.text, /@keyframes card-vortex-in-nw/);
     assert.match(res.text, /\.anim-card-block/);
-    assert.match(res.text, /rotateX/);
-    assert.match(res.text, /rotateY/);
+    assert.match(res.text, /translate3d/);
+    // Verified: no card tilt (no rotateX or rotateY in the vortex animation)
+    assert.doesNotMatch(res.text, /card-vortex[^{]*\{[^}]*rotateX/);
+    assert.doesNotMatch(res.text, /card-vortex[^{]*\{[^}]*rotateY/);
     assert.match(res.text, /prefers-reduced-motion:reduce/);
   } finally {
     close();
