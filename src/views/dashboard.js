@@ -49,9 +49,9 @@ export function renderDashboard(
       .np-toggle label:has(input:checked) { color:var(--color-text); font-weight:800; border-bottom-color:var(--color-accent); }
       .np-toggle input { position:absolute; opacity:0; width:0; height:0; }
       .np-toggle input:focus-visible + span { outline:2px solid var(--color-accent); outline-offset:3px; }
-      .np-content-row { display:flex; gap:var(--space-8); align-items:flex-start; }
+      .np-content-row { display:flex; gap:var(--space-8); align-items:flex-start; position:relative; z-index:20; }
       .np-content-row > * { min-width:0; }
-      .np-content-row [data-testid="post-list-cell"] { flex:1 1 auto; overflow-x:clip; }
+      .np-content-row [data-testid="post-list-cell"] { flex:1 1 auto; }
       .np-content-row [data-testid="member-rail"] {
         flex:0 1 280px;
         min-width:220px;

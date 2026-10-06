@@ -83,16 +83,21 @@ test('Index layout applies anim-card-block and staggered index to rows with zero
   }
 });
 
-test('motion.css defines 3D card-block keyframes, timing tokens, and reduced-motion override', async () => {
+test('motion.css defines 3D card-block vortex keyframes, 1400ms timing tokens, and reduced-motion override', async () => {
   const { app, close } = buildApp();
   try {
     const res = await request(app).get('/assets/tokens/motion.css');
     assert.equal(res.status, 200);
 
-    assert.match(res.text, /@keyframes card-block-in-left-top/);
-    assert.match(res.text, /@keyframes card-block-in-right-top/);
-    assert.match(res.text, /@keyframes card-block-in-left-bottom/);
-    assert.match(res.text, /@keyframes card-block-in-right-bottom/);
+    assert.match(res.text, /--dur-card-block:\s*1400ms/);
+    assert.match(res.text, /@keyframes card-vortex-in-n/);
+    assert.match(res.text, /@keyframes card-vortex-in-ne/);
+    assert.match(res.text, /@keyframes card-vortex-in-e/);
+    assert.match(res.text, /@keyframes card-vortex-in-se/);
+    assert.match(res.text, /@keyframes card-vortex-in-s/);
+    assert.match(res.text, /@keyframes card-vortex-in-sw/);
+    assert.match(res.text, /@keyframes card-vortex-in-w/);
+    assert.match(res.text, /@keyframes card-vortex-in-nw/);
     assert.match(res.text, /\.anim-card-block/);
     assert.match(res.text, /rotateX/);
     assert.match(res.text, /rotateY/);
