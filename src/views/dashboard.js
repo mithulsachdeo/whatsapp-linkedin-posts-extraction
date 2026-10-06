@@ -51,7 +51,7 @@ export function renderDashboard(
       .np-toggle input:focus-visible + span { outline:2px solid var(--color-accent); outline-offset:3px; }
       .np-content-row { display:flex; gap:var(--space-8); align-items:flex-start; }
       .np-content-row > * { min-width:0; }
-      .np-content-row [data-testid="post-list-cell"] { flex:1 1 auto; }
+      .np-content-row [data-testid="post-list-cell"] { flex:1 1 auto; overflow-x:clip; }
       .np-content-row [data-testid="member-rail"] {
         flex:0 1 280px;
         min-width:220px;
@@ -293,7 +293,7 @@ function renderNoResults(search, activeMember) {
 // Rows density: the ruled newspaper index. Each row links to the post detail;
 // in the Read view it also carries a Restore-to-Unread control.
 function renderRows(posts, view) {
-  const rows = posts.map((post) => indexRow(post, view)).join('');
+  const rows = posts.map((post, i) => indexRow(post, view, i)).join('');
   return `<div class="index" data-testid="post-list-rows">${rows}</div>`;
 }
 
@@ -308,12 +308,12 @@ function restoreControl(post, view) {
     </form>`;
 }
 
-function indexRow(post, view) {
+function indexRow(post, view, index = 0) {
   const { label, headline } = previewAvailable(post)
     ? rowPreviewText(post)
     : { label: '', headline: 'Preview unavailable' };
   const row = `
-    <a class="index-row" href="/posts/${post.id}" style="flex:1 1 auto;grid-template-columns:minmax(0,1fr)">
+    <a class="index-row anim-card-block" href="/posts/${post.id}" style="--i:${index};flex:1 1 auto;grid-template-columns:minmax(0,1fr)">
       <span style="min-width:0">
         ${label ? `<span class="meta" style="display:block">${esc(label)}</span>` : ''}
         <span class="headline headline-sm" style="display:block">${esc(headline)}</span>
@@ -323,7 +323,7 @@ function indexRow(post, view) {
     </a>`;
   const restore = restoreControl(post, view);
   return restore
-    ? `<div style="display:flex;align-items:center;gap:var(--space-4)">${row}${restore}</div>`
+    ? `<div class="anim-card-block" style="--i:${index};display:flex;align-items:center;gap:var(--space-4)">${row}${restore}</div>`
     : row;
 }
 
@@ -357,7 +357,7 @@ function indexMeta(post) {
 // Cards density: column stories (CSS multi-column), each a block linking to
 // its detail page. No photos: the app carries no imagery.
 function renderCards(posts, view) {
-  const stories = posts.map((post) => columnStory(post, view)).join('');
+  const stories = posts.map((post, i) => columnStory(post, view, i)).join('');
   return `<div class="columns" data-testid="post-list-cards">${stories}</div>`;
 }
 
@@ -365,12 +365,12 @@ function renderCards(posts, view) {
 // can't blow up the card layout (the excerpt is otherwise shown in full).
 const HEADLINE_CLAMP_STYLE = 'display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden';
 
-function columnStory(post, view) {
+function columnStory(post, view, index = 0) {
   const { kicker, headline } = previewAvailable(post)
     ? cardPreviewText(post)
     : { kicker: 'From the archive', headline: 'Preview unavailable' };
   const story = `
-    <a class="story story-link" href="/posts/${post.id}" style="display:block">
+    <a class="story story-link anim-card-block" href="/posts/${post.id}" style="--i:${index};display:block">
       <div class="kicker-row">
         ${kicker ? `<span class="kicker">${esc(kicker)}</span>` : ''}
         ${post.pendingAttribution ? '<span class="kicker kicker-sepia">Pending attribution</span>' : ''}
@@ -384,7 +384,7 @@ function columnStory(post, view) {
     </a>`;
   const restore = restoreControl(post, view);
   return restore
-    ? `<div class="story" style="break-inside:avoid">${story}${restore}</div>`
+    ? `<div class="story anim-card-block" style="--i:${index};break-inside:avoid">${story}${restore}</div>`
     : story;
 }
 
