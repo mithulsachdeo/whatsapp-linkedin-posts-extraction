@@ -41,6 +41,7 @@ export function layout({ title, active, isAdmin, lastUpdated, body }) {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${esc(title)} — The Rethinkers' Times</title>
 <link rel="stylesheet" href="/assets/styles.css" />
+<script src="/assets/card-convergence-blast.js" defer></script>
 </head>
 <body class="paper">
 <header style="padding:var(--space-4) var(--space-6) 0;max-width:1200px;margin:0 auto">

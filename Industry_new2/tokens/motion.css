@@ -4,13 +4,15 @@
 --dur-slow:1100ms; /* @kind other */
 --dur-press:900ms; /* @kind other */
 --dur-wire:60s; /* @kind other */
---dur-card-block:1400ms; /* @kind other */
---stagger-card-block:40ms; /* @kind other */
+--dur-card-block:1850ms; /* @kind other */
+--dur-card-converge-blast:1850ms; /* @kind other */
+--stagger-card-block:30ms; /* @kind other */
 
 --ease-out:cubic-bezier(.2,.7,.2,1); /* @kind other */
 --ease-press:cubic-bezier(.2,.7,.2,1); /* @kind other */
 --ease-thump:cubic-bezier(.3,1.4,.5,1); /* @kind other */
 --ease-card-vortex:cubic-bezier(.22,1,.36,1); /* @kind other */
+--ease-card-converge-blast:cubic-bezier(.22,1,.36,1); /* @kind other */
 }
 @keyframes ink-in{from{opacity:0;filter:blur(4px);letter-spacing:.04em}to{opacity:1;filter:blur(0);letter-spacing:normal}}
 @keyframes press-reveal{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
@@ -24,76 +26,183 @@
 .anim-stamp{animation:stamp-in 550ms var(--ease-thump) both;animation-delay:var(--delay,.6s)}
 .anim-rise{animation:rise 500ms var(--ease-out) both;animation-delay:var(--delay,0s)}
 .anim-type{display:inline-block;overflow:hidden;white-space:nowrap;vertical-align:bottom;animation:type-on 1.2s steps(28) both}
-@keyframes card-vortex-in-n{
-  0%{opacity:0;transform:translate3d(0,-120vh,-260px) scale(.6);z-index:60}
-  48%{opacity:1;transform:translate3d(0,-20vh,45px) scale(1.06);z-index:60}
-  78%{transform:translate3d(0,4px,10px) scale(1.01);z-index:20}
-  100%{opacity:1;transform:translate3d(0,0,0) scale(1);z-index:1}
-}
-@keyframes card-vortex-in-ne{
-  0%{opacity:0;transform:translate3d(85vw,-110vh,-280px) scale(.58);z-index:60}
-  48%{opacity:1;transform:translate3d(14vw,-18vh,45px) scale(1.06);z-index:60}
-  78%{transform:translate3d(-3px,3px,10px) scale(1.01);z-index:20}
-  100%{opacity:1;transform:translate3d(0,0,0) scale(1);z-index:1}
-}
-@keyframes card-vortex-in-e{
-  0%{opacity:0;transform:translate3d(105vw,-10vh,-260px) scale(.62);z-index:60}
-  48%{opacity:1;transform:translate3d(18vw,4vh,45px) scale(1.06);z-index:60}
-  78%{transform:translate3d(-4px,0,10px) scale(1.01);z-index:20}
-  100%{opacity:1;transform:translate3d(0,0,0) scale(1);z-index:1}
-}
-@keyframes card-vortex-in-se{
-  0%{opacity:0;transform:translate3d(85vw,110vh,-280px) scale(.58);z-index:60}
-  48%{opacity:1;transform:translate3d(14vw,20vh,45px) scale(1.06);z-index:60}
-  78%{transform:translate3d(-3px,-3px,10px) scale(1.01);z-index:20}
-  100%{opacity:1;transform:translate3d(0,0,0) scale(1);z-index:1}
-}
-@keyframes card-vortex-in-s{
-  0%{opacity:0;transform:translate3d(0,120vh,-260px) scale(.6);z-index:60}
-  48%{opacity:1;transform:translate3d(0,22vh,45px) scale(1.06);z-index:60}
-  78%{transform:translate3d(0,-4px,10px) scale(1.01);z-index:20}
-  100%{opacity:1;transform:translate3d(0,0,0) scale(1);z-index:1}
-}
-@keyframes card-vortex-in-sw{
-  0%{opacity:0;transform:translate3d(-85vw,110vh,-280px) scale(.58);z-index:60}
-  48%{opacity:1;transform:translate3d(-14vw,20vh,45px) scale(1.06);z-index:60}
-  78%{transform:translate3d(3px,-3px,10px) scale(1.01);z-index:20}
-  100%{opacity:1;transform:translate3d(0,0,0) scale(1);z-index:1}
-}
-@keyframes card-vortex-in-w{
-  0%{opacity:0;transform:translate3d(-105vw,-10vh,-260px) scale(.62);z-index:60}
-  48%{opacity:1;transform:translate3d(-18vw,4vh,45px) scale(1.06);z-index:60}
-  78%{transform:translate3d(4px,0,10px) scale(1.01);z-index:20}
-  100%{opacity:1;transform:translate3d(0,0,0) scale(1);z-index:1}
-}
-@keyframes card-vortex-in-nw{
-  0%{opacity:0;transform:translate3d(-85vw,-110vh,-280px) scale(.58);z-index:60}
-  48%{opacity:1;transform:translate3d(-14vw,-18vh,45px) scale(1.06);z-index:60}
-  78%{transform:translate3d(3px,3px,10px) scale(1.01);z-index:20}
-  100%{opacity:1;transform:translate3d(0,0,0) scale(1);z-index:1}
+
+/* Sleek 3D Convergence and Blast Animation */
+@keyframes card-converge-blast {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--sx, 0px), var(--sy, -120vh), -280px) scale(0.55);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  16% {
+    opacity: 0.95;
+  }
+  42% {
+    /* Converging close to the central #7a2418 circle */
+    transform: translate3d(calc(var(--cx, 0px) * 0.96), calc(var(--cy, 0px) * 0.96), -80px) scale(0.18);
+    filter: drop-shadow(0 0 16px rgba(122, 36, 24, 0.75));
+  }
+  50% {
+    /* Entering inside the central circle */
+    transform: translate3d(var(--cx, 0px), var(--cy, 0px), -20px) scale(0.04);
+    opacity: 1;
+    filter: drop-shadow(0 0 24px rgba(179, 64, 44, 0.95));
+  }
+  54% {
+    /* Singularity compression inside the #7a2418 central circle */
+    transform: translate3d(var(--cx, 0px), var(--cy, 0px), 0px) scale(0.035);
+    opacity: 1;
+    filter: drop-shadow(0 0 32px rgba(179, 64, 44, 1));
+  }
+  55% {
+    /* Kinetic Blast Detonation! Explosive expansion begins */
+    transform: translate3d(calc(var(--cx, 0px) * 0.75), calc(var(--cy, 0px) * 0.75), 45px) scale(0.4);
+    opacity: 1;
+    filter: drop-shadow(0 20px 40px rgba(122, 36, 24, 0.85));
+  }
+  66% {
+    /* Dispersal wave outwards */
+    transform: translate3d(calc(var(--cx, 0px) * 0.28), calc(var(--cy, 0px) * 0.28), 75px) scale(0.92);
+    opacity: 1;
+    filter: drop-shadow(0 18px 36px rgba(122, 36, 24, 0.55));
+  }
+  78% {
+    /* Blast momentum overshoot */
+    transform: translate3d(calc(var(--cx, 0px) * -0.05), calc(var(--cy, 0px) * -0.05), 35px) scale(1.06);
+    opacity: 1;
+    filter: drop-shadow(0 12px 24px rgba(27, 26, 23, 0.3));
+  }
+  90% {
+    /* Elastic spring settling */
+    transform: translate3d(0, 2px, 8px) scale(1.01);
+    opacity: 1;
+    filter: drop-shadow(0 4px 10px rgba(27, 26, 23, 0.12));
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: none;
+  }
 }
 
-.anim-card-block{
-  position:relative;
-  animation-duration:var(--dur-card-block,1400ms);
-  animation-timing-function:var(--ease-card-vortex,cubic-bezier(.22,1,.36,1));
-  animation-fill-mode:both;
-  animation-delay:calc(min(var(--i,0),16) * var(--stagger-card-block,40ms));
-  will-change:transform,opacity;
-  transform-origin:center center;
-  backface-visibility:hidden;
+.anim-card-block {
+  position: relative;
+  animation-name: card-converge-blast;
+  animation-duration: var(--dur-card-converge-blast, 1850ms);
+  animation-timing-function: var(--ease-card-converge-blast, cubic-bezier(.22, 1, .36, 1));
+  animation-fill-mode: both;
+  animation-delay: calc(min(var(--i, 0), 16) * var(--stagger-card-block, 30ms));
+  will-change: transform, opacity, filter;
+  transform-origin: center center;
+  backface-visibility: hidden;
 }
-.anim-card-block:nth-child(8n+1){animation-name:card-vortex-in-n}
-.anim-card-block:nth-child(8n+2){animation-name:card-vortex-in-ne}
-.anim-card-block:nth-child(8n+3){animation-name:card-vortex-in-e}
-.anim-card-block:nth-child(8n+4){animation-name:card-vortex-in-se}
-.anim-card-block:nth-child(8n+5){animation-name:card-vortex-in-s}
-.anim-card-block:nth-child(8n+6){animation-name:card-vortex-in-sw}
-.anim-card-block:nth-child(8n+7){animation-name:card-vortex-in-w}
-.anim-card-block:nth-child(8n+8){animation-name:card-vortex-in-nw}
+
+/* Temporary central small circle (#7a2418) */
+#convergence-center-circle {
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #b3402c 0%, #7a2418 65%, #5c1a11 100%);
+  border: 2px solid #b3402c;
+  box-shadow: 0 0 22px rgba(179, 64, 44, 0.85), 0 0 55px rgba(122, 36, 24, 0.65), inset 0 0 10px rgba(248, 230, 225, 0.5);
+  pointer-events: none;
+  z-index: 99999;
+  transform: translate(-50%, -50%) scale(0);
+  animation: central-circle-pulse var(--dur-card-converge-blast, 1850ms) cubic-bezier(.2, .8, .2, 1) both;
+}
+
+#convergence-center-circle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: #f3ecdc;
+  box-shadow: 0 0 8px #ffffff;
+}
+
+#convergence-shockwave {
+  position: fixed;
+  left: 50vw;
+  top: 50vh;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid #b3402c;
+  box-shadow: 0 0 25px rgba(179, 64, 44, 0.9), inset 0 0 20px rgba(122, 36, 24, 0.6);
+  pointer-events: none;
+  z-index: 99998;
+  transform: translate(-50%, -50%) scale(0);
+  animation: central-blast-shockwave var(--dur-card-converge-blast, 1850ms) cubic-bezier(.1, .9, .2, 1) both;
+}
+
+@keyframes central-circle-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+  }
+  14% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+    box-shadow: 0 0 22px rgba(179, 64, 44, 0.8), 0 0 45px rgba(122, 36, 24, 0.5);
+  }
+  48% {
+    transform: translate(-50%, -50%) scale(1.15);
+    opacity: 1;
+    box-shadow: 0 0 35px rgba(204, 106, 85, 0.9), 0 0 70px rgba(179, 64, 44, 0.8);
+  }
+  54% {
+    /* Singularity compression */
+    transform: translate(-50%, -50%) scale(0.85);
+    opacity: 1;
+    box-shadow: 0 0 50px rgba(255, 255, 255, 1), 0 0 95px rgba(179, 64, 44, 1);
+  }
+  55% {
+    /* Blast detonation */
+    transform: translate(-50%, -50%) scale(2.8);
+    opacity: 1;
+    background: radial-gradient(circle, #f8e6e1 0%, #b3402c 50%, #7a2418 100%);
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(3.6);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
+  }
+}
+
+@keyframes central-blast-shockwave {
+  0%, 53% {
+    transform: translate(-50%, -50%) scale(0.1);
+    opacity: 0;
+  }
+  55% {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 1;
+    border-color: #b3402c;
+  }
+  78% {
+    transform: translate(-50%, -50%) scale(26);
+    opacity: 0.15;
+    border-color: #7a2418;
+  }
+  86%, 100% {
+    transform: translate(-50%, -50%) scale(32);
+    opacity: 0;
+  }
+}
 
 @media (prefers-reduced-motion:reduce){
   .anim-ink,.anim-press,.anim-stamp,.anim-rise,.anim-type{animation-duration:1ms!important;animation-delay:0s!important}
-  .anim-card-block{animation:none!important;transform:none!important;opacity:1!important}
+  .anim-card-block{animation:none!important;transform:none!important;opacity:1!important;filter:none!important}
+  #convergence-center-circle,#convergence-shockwave{display:none!important}
   .wire-track,.caret,.wire-dot{animation:none!important}
 }

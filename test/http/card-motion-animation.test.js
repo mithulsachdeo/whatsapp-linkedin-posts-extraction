@@ -59,6 +59,8 @@ test('Columns layout applies anim-card-block and staggered index to cards with z
     // No extra helper elements or canvases
     assert.doesNotMatch(res.text, /letterpress-3d-canvas/);
     assert.doesNotMatch(res.text, /<canvas/);
+    // Orchestrator script is included
+    assert.match(res.text, /<script src="\/assets\/card-convergence-blast\.js" defer><\/script>/);
   } finally {
     close();
   }
@@ -78,32 +80,49 @@ test('Index layout applies anim-card-block and staggered index to rows with zero
     // No extra helper elements or canvases
     assert.doesNotMatch(res.text, /letterpress-3d-canvas/);
     assert.doesNotMatch(res.text, /<canvas/);
+    // Orchestrator script is included
+    assert.match(res.text, /<script src="\/assets\/card-convergence-blast\.js" defer><\/script>/);
   } finally {
     close();
   }
 });
 
-test('motion.css defines 3D card-block vortex keyframes, 1400ms timing tokens, and reduced-motion override', async () => {
+test('motion.css defines 3D card convergence and blast keyframes, central circle styling, and reduced-motion override', async () => {
   const { app, close } = buildApp();
   try {
     const res = await request(app).get('/assets/tokens/motion.css');
     assert.equal(res.status, 200);
 
-    assert.match(res.text, /--dur-card-block:\s*1400ms/);
-    assert.match(res.text, /@keyframes card-vortex-in-n/);
-    assert.match(res.text, /@keyframes card-vortex-in-ne/);
-    assert.match(res.text, /@keyframes card-vortex-in-e/);
-    assert.match(res.text, /@keyframes card-vortex-in-se/);
-    assert.match(res.text, /@keyframes card-vortex-in-s/);
-    assert.match(res.text, /@keyframes card-vortex-in-sw/);
-    assert.match(res.text, /@keyframes card-vortex-in-w/);
-    assert.match(res.text, /@keyframes card-vortex-in-nw/);
+    assert.match(res.text, /--dur-card-converge-blast:\s*1850ms/);
+    assert.match(res.text, /@keyframes card-converge-blast/);
+    assert.match(res.text, /@keyframes central-circle-pulse/);
+    assert.match(res.text, /@keyframes central-blast-shockwave/);
+    assert.match(res.text, /#convergence-center-circle/);
+    assert.match(res.text, /#convergence-shockwave/);
     assert.match(res.text, /\.anim-card-block/);
     assert.match(res.text, /translate3d/);
-    // Verified: no card tilt (no rotateX or rotateY in the vortex animation)
-    assert.doesNotMatch(res.text, /card-vortex[^{]*\{[^}]*rotateX/);
-    assert.doesNotMatch(res.text, /card-vortex[^{]*\{[^}]*rotateY/);
+
+    // Verified: central circle colored with #7a2418
+    assert.match(res.text, /#7a2418/);
+
+    // Verified: no card tilt (no rotateX or rotateY in the convergence-blast animation)
+    assert.doesNotMatch(res.text, /card-converge[^{]*\{[^}]*rotateX/);
+    assert.doesNotMatch(res.text, /card-converge[^{]*\{[^}]*rotateY/);
     assert.match(res.text, /prefers-reduced-motion:reduce/);
+  } finally {
+    close();
+  }
+});
+
+test('/assets/card-convergence-blast.js is served with HTTP 200 and application/javascript', async () => {
+  const { app, close } = buildApp();
+  try {
+    const res = await request(app).get('/assets/card-convergence-blast.js');
+    assert.equal(res.status, 200);
+    assert.match(res.headers['content-type'], /javascript/);
+    assert.match(res.text, /convergence-center-circle/);
+    assert.match(res.text, /convergence-shockwave/);
+    assert.match(res.text, /getBoundingClientRect/);
   } finally {
     close();
   }
