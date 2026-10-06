@@ -200,9 +200,34 @@
   }
 }
 
+/* Rotary Press & Wet-Ink Unroll Entrance (for newly printed editions) */
+@keyframes press-unroll {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    filter: blur(2.5px);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(0.6px);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+}
+
+.anim-press-unroll {
+  animation: press-unroll 520ms var(--ease-press, cubic-bezier(.2,.7,.2,1)) both;
+  animation-delay: var(--delay, 0s);
+  will-change: clip-path, opacity, filter;
+}
+
 @media (prefers-reduced-motion:reduce){
   .anim-ink,.anim-press,.anim-stamp,.anim-rise,.anim-type{animation-duration:1ms!important;animation-delay:0s!important}
-  .anim-card-block{animation:none!important;transform:none!important;opacity:1!important;filter:none!important}
+  .anim-card-block,.anim-press-unroll{animation:none!important;transform:none!important;clip-path:none!important;opacity:1!important;filter:none!important}
   #convergence-center-circle,#convergence-shockwave{display:none!important}
   .wire-track,.caret,.wire-dot{animation:none!important}
 }
+

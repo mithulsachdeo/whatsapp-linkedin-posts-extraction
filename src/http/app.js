@@ -11,7 +11,7 @@ import {
   getMembers,
 } from '../query/review.js';
 import { layout } from '../views/layout.js';
-import { renderDashboard } from '../views/dashboard.js';
+import { renderDashboard, renderEditionFragment, BATCH_SIZE } from '../views/dashboard.js';
 import { renderImportPage } from '../views/import.js';
 import { renderPostDetail } from '../views/postDetail.js';
 import { renderReviewPage } from '../views/review.js';
@@ -109,6 +109,50 @@ export function createApp(db, options = {}) {
     res.send(
       layout({ title: 'Posts', active: 'posts', isAdmin: req.isAdmin, lastUpdated: data.lastUpdated, body })
     );
+  });
+
+  // Partial edition dispatches endpoint for in-place pagination / lazy loading
+  app.get('/dispatches', (req, res) => {
+    const explicitDensity = parseDensity(req.query.density);
+    const density = explicitDensity ?? densityFromCookieHeader(req.headers.cookie) ?? 'cards';
+    const sort = 'recent';
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const view = req.query.view === 'read' || req.query.view === 'all' ? req.query.view : 'unread';
+    const readIds = readIdsFromCookieHeader(req.headers.cookie);
+
+    const queryOptions = { sort, view, readIds };
+    if (search) queryOptions.search = search;
+
+    let activeMember = null;
+    const memberParam = req.query.member;
+    if (memberParam === 'pending') {
+      queryOptions.pending = true;
+      activeMember = { type: 'pending' };
+    } else if (memberParam) {
+      const member = getMembers(db).find((m) => m.id === Number(memberParam));
+      if (member) {
+        queryOptions.memberId = member.id;
+        activeMember = { type: 'member', id: member.id, displayName: member.displayName };
+      }
+    }
+
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    const limit = Math.max(1, parseInt(req.query.limit, 10) || BATCH_SIZE);
+    const editionIndex = Math.floor(offset / limit) + 1;
+
+    const data = getDashboard(db, queryOptions);
+    const totalCount = data.posts.length;
+    const batch = data.posts.slice(offset, offset + limit);
+
+    const fragment = renderEditionFragment(batch, {
+      offset,
+      totalCount,
+      density,
+      view,
+      editionIndex,
+    });
+
+    res.type('html').send(fragment);
   });
 
   // Post detail (ticket #8): public, no login, like the rest of the

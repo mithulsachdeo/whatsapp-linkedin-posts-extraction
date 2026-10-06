@@ -1,26 +1,30 @@
 /**
- * Card Convergence & Blast 3D Motion Orchestrator
+ * Card Convergence & Blast 3D Motion Orchestrator + Rotary Press Lazy-Loaded Editions
  *
  * Sequence:
- * 1. Post cards converge from all 360° directions outside the viewport
- *    into one temporary central small circle (colored #7a2418, matching "FROM THE ARCHIVE").
- * 2. As cards enter the central circle, the singularity compresses and pulses with energy.
- * 3. At peak compression, a kinetic blast detonates, sending out a shockwave ring.
- * 4. Post cards disperse outwards with high velocity, 3D perspective depth, and photorealistic
- *    drop shadows before settling with back-easing into their exact grid/index layout positions.
- * 5. Smooth 60fps GPU acceleration via transform3d and scale3d.
+ * 1. Initial Page Arrival:
+ *    - Post cards in the first edition converge from all 360° directions outside the viewport
+ *      into one temporary central small circle (colored #7a2418, matching "FROM THE ARCHIVE").
+ *    - Singularity compresses and pulses; kinetic blast detonates with shockwave ring.
+ *    - Post cards disperse outward with high velocity and 3D perspective depth, settling into place.
+ * 2. Downstream "Print Next Edition" Action:
+ *    - When the reader clicks "Print Next Edition", the next batch of dispatches is fetched via SSR fragment.
+ *    - Appended in a separate, isolated 3-column edition band (zero reflow of earlier cards).
+ *    - Newly printed cards enter via a tactile rotary press and wet-ink unroll animation (.anim-press-unroll)
+ *      with staggered 35ms delays.
+ * 3. 60fps GPU acceleration via transform3d, scale3d, and clip-path.
  */
 (function () {
   'use strict';
 
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-  // Accessibility: respect user motion preferences
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    return;
-  }
+  const prefersReducedMotion =
+    window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function initConvergenceBlast() {
+    if (prefersReducedMotion) return;
+
     const cards = Array.from(
       document.querySelectorAll(
         '[data-testid="post-list-cards"] .anim-card-block, [data-testid="post-list-rows"] .anim-card-block'
@@ -58,7 +62,6 @@
       const dy = vpCenterY - cardCenterY;
 
       // 360-degree perimeter entry vector
-      // Distribute evenly around 360 degrees so cards converge from all directions
       const angle = (index / total) * Math.PI * 2 + (index % 2 === 0 ? 0.15 : -0.15);
       const sx = dx + Math.cos(angle) * dist;
       const sy = dy + Math.sin(angle) * dist;
@@ -89,9 +92,89 @@
     setTimeout(cleanup, 2100);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initConvergenceBlast);
-  } else {
+  function initEditionTrigger() {
+    function bindTrigger() {
+      const triggerBtn = document.querySelector('.edition-trigger');
+      if (!triggerBtn) return;
+
+      triggerBtn.addEventListener('click', async function (e) {
+        e.preventDefault();
+        const nextOffset = triggerBtn.getAttribute('data-next-offset');
+        const density = triggerBtn.getAttribute('data-density') || 'cards';
+        const view = triggerBtn.getAttribute('data-view') || 'unread';
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const q = urlParams.get('q') || '';
+        const member = urlParams.get('member') || '';
+
+        const params = new URLSearchParams();
+        params.set('offset', nextOffset);
+        params.set('density', density);
+        params.set('view', view);
+        if (q) params.set('q', q);
+        if (member) params.set('member', member);
+
+        triggerBtn.disabled = true;
+        const originalText = triggerBtn.innerHTML;
+        triggerBtn.innerHTML = '<span>⚙ Rolling Rotary Press...</span>';
+
+        try {
+          const res = await fetch('/dispatches?' + params.toString());
+          if (!res.ok) throw new Error('Failed to fetch dispatches');
+          const html = await res.text();
+
+          const wrapper = triggerBtn.closest('.edition-trigger-wrap');
+          if (!wrapper) return;
+
+          const temp = document.createElement('div');
+          temp.innerHTML = html.trim();
+
+          const newBand = temp.querySelector('.edition-band');
+          const newCards = newBand ? Array.from(newBand.children) : [];
+
+          // Animate new cards with staggered rotary press unroll if reduced motion is off
+          if (!prefersReducedMotion) {
+            newCards.forEach((card, idx) => {
+              card.classList.add('anim-press-unroll');
+              card.style.setProperty('--delay', `${idx * 35}ms`);
+            });
+          }
+
+          const parent = wrapper.parentNode;
+          while (temp.firstChild) {
+            parent.insertBefore(temp.firstChild, wrapper);
+          }
+          parent.removeChild(wrapper);
+
+          // Re-bind to next trigger if one exists
+          bindTrigger();
+
+          // Smooth scroll to the newly printed edition divider
+          if (newBand) {
+            const divider = newBand.previousElementSibling;
+            if (divider) {
+              divider.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }
+        } catch (err) {
+          console.error(err);
+          triggerBtn.disabled = false;
+          triggerBtn.innerHTML = originalText;
+        }
+      });
+    }
+
+    bindTrigger();
+  }
+
+  function start() {
     initConvergenceBlast();
+    initEditionTrigger();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
   }
 })();

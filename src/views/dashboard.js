@@ -80,8 +80,35 @@ export function renderDashboard(
   `;
 }
 
+export const BATCH_SIZE = 18;
+
 function renderPostList(posts, density, view) {
-  return density === 'cards' ? renderCards(posts, view) : renderRows(posts, view);
+  const initialPosts = posts.slice(0, BATCH_SIZE);
+  const remainingCount = posts.length - initialPosts.length;
+  const initialBand =
+    density === 'rows' ? renderRows(initialPosts, view) : renderCards(initialPosts, view);
+
+  if (remainingCount <= 0) {
+    return `
+      <div data-testid="post-list-container">
+        ${initialBand}
+        <div class="edition-colophon" data-testid="edition-colophon">
+          <span>❖ All dispatches in this edition have been printed ❖</span>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div data-testid="post-list-container">
+      ${initialBand}
+      <div class="edition-trigger-wrap" data-testid="edition-trigger-wrap">
+        <button type="button" class="edition-trigger" data-next-offset="${BATCH_SIZE}" data-remaining-count="${remainingCount}" data-density="${density}" data-view="${view}">
+          <span>📰 Print Next Edition (${remainingCount} Dispatches Remaining)</span>
+        </button>
+      </div>
+    </div>
+  `;
 }
 
 // Per-device Unread/Read/All toggle (spec): a plain server-rendered link
@@ -287,6 +314,37 @@ function renderNoResults(search, activeMember) {
       <p class="standfirst">Try another word, or clear the correspondent filter.</p>
       <a class="btn" href="/" data-testid="clear-filters" style="margin-top:var(--space-2)">Clear search and filters</a>
     </div>
+  `;
+}
+
+export function renderEditionFragment(posts, { offset, totalCount, density, view, editionIndex = 2 }) {
+  const nextOffset = offset + posts.length;
+  const remainingCount = Math.max(0, totalCount - nextOffset);
+  const band =
+    density === 'rows'
+      ? `<div class="index edition-band" data-edition="${editionIndex}">${posts.map((post, i) => indexRow(post, view, offset + i)).join('')}</div>`
+      : `<div class="columns edition-band" data-edition="${editionIndex}">${posts.map((post, i) => columnStory(post, view, offset + i)).join('')}</div>`;
+
+  const footer =
+    remainingCount > 0
+      ? `
+        <div class="edition-trigger-wrap" data-testid="edition-trigger-wrap">
+          <button type="button" class="edition-trigger" data-next-offset="${nextOffset}" data-remaining-count="${remainingCount}" data-density="${density}" data-view="${view}">
+            <span>📰 Print Next Edition (${remainingCount} Dispatches Remaining)</span>
+          </button>
+        </div>`
+      : `
+        <div class="edition-colophon" data-testid="edition-colophon">
+          <span>❖ All dispatches in this edition have been printed ❖</span>
+        </div>`;
+
+  return `
+    <div class="edition-divider">
+      <span class="kicker">Edition ${editionIndex}</span>
+      <span class="meta">${posts.length} Dispatches · Printed from archive</span>
+    </div>
+    ${band}
+    ${footer}
   `;
 }
 
