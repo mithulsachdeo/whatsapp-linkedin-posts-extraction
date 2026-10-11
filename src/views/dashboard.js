@@ -198,6 +198,11 @@ function renderGutterAds(photoFilenames) {
         position:absolute; inset:0; width:100%; height:100%;
         object-fit:cover; object-position:center; display:block;
         transition:opacity 450ms ease;
+        /* Warm the neutral-gray photos toward the paper's sepia ink so they
+           sit on the cream --color-bg instead of reading cold. sepia() tints
+           the monochrome warm; the slight contrast/brightness keeps it from
+           muddying. Tune the sepia amount to taste. */
+        filter:grayscale(1) sepia(0.4) brightness(1.02) contrast(1.02);
       }
       @media (prefers-reduced-motion: reduce) { .gutter-slot img { transition:none; } }
     </style>
