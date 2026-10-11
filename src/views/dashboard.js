@@ -163,12 +163,20 @@ function renderGutterAds(photoFilenames) {
       @media (prefers-reduced-motion: reduce) { .gutter-ads-root { transition:none; } }
       .gutter-ads {
         position:fixed; top:50%; transform:translateY(-50%);
-        width:220px; display:flex; flex-direction:column; gap:var(--space-4);
+        /* Fluid width: fill the side margin outside the 1200px column, capped
+           at 220px. The -space-12 absorbs the edge inset + the gap to the
+           content column + the scrollbar width (100vw includes the scrollbar
+           on Windows), so the panel never overlaps the content. */
+        width:min(220px, calc((100vw - 1200px) / 2 - var(--space-12)));
+        display:flex; flex-direction:column; gap:var(--space-4);
         pointer-events:auto;
       }
-      .gutter-ads[data-testid="gutter-left"] { left:max(var(--space-4), calc((100vw - 1200px) / 2 - 220px - var(--space-6))); }
-      .gutter-ads[data-testid="gutter-right"] { right:max(var(--space-4), calc((100vw - 1200px) / 2 - 220px - var(--space-6))); }
-      @media (max-width: 1399px) { .gutter-ads { display:none; } }
+      .gutter-ads[data-testid="gutter-left"] { left:var(--space-4); }
+      .gutter-ads[data-testid="gutter-right"] { right:var(--space-4); }
+      /* Only show once the margin can actually hold a ~110px+ panel. Below
+         this the gutters would crowd the reading column, so they hide (like
+         news-site rail ads collapsing on narrow screens). */
+      @media (max-width: 1520px) { .gutter-ads { display:none; } }
       .gutter-close {
         align-self:flex-end; width:28px; height:28px; flex:none;
         background:var(--color-surface); border:var(--rule-mid) solid var(--color-text);
