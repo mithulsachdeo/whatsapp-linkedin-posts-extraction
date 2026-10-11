@@ -1,10 +1,12 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
+import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getDashboard, getDateRangeBounds, getMemberFilterOptions, getPostDetail, getPostUrl } from '../query/dashboard.js';
 import { readIdsFromCookieHeader, addReadId, removeReadId, serializeReadCookie } from './readCookie.js';
 import { parseDensity, densityFromCookieHeader, serializeDensityCookie } from './densityCookie.js';
+import { gutterHiddenFromCookieHeader } from './gutterCookie.js';
 import {
   getUnknownSenderReviewItems,
   getOtherLinkedInReviewItems,
@@ -34,6 +36,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // resolve relative to /assets/styles.css), so retuning the tokens needs no
 // build step.
 const INDUSTRY_DIR = path.join(__dirname, '..', '..', 'Industry_new2');
+const GUTTER_PHOTOS_DIR = path.join(INDUSTRY_DIR, 'gutter-photos');
+
+// Gutter photo ads (spec): the 15 pre-optimized B&W photos are read from
+// disk at request time -- never hardcoded -- so dropping files in/out of
+// Industry_new2/gutter-photos/ just works. Guarded: a missing directory (or
+// one with no .webp files) yields an empty list, which renderGutterAds
+// treats as "render nothing" rather than throwing.
+function readGutterPhotoFilenames() {
+  try {
+    return readdirSync(GUTTER_PHOTOS_DIR).filter((name) => name.toLowerCase().endsWith('.webp'));
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Builds the Express app. HTTP is the secondary test seam: routes are kept
@@ -108,6 +124,11 @@ export function createApp(db, options = {}) {
 
     const data = getDashboard(db, queryOptions);
     const filterOptions = getMemberFilterOptions(db);
+    // Gutter photo ads (spec): Posts-page only -- read here, in the `/`
+    // route, rather than threaded through shared layout.js, so Import/
+    // Review/Login/Post-detail never receive the photo list or markup.
+    const guttersHidden = gutterHiddenFromCookieHeader(req.headers.cookie);
+    const gutterPhotos = guttersHidden ? [] : readGutterPhotoFilenames();
     const body = renderDashboard(data, {
       isAdmin: req.isAdmin,
       density,
@@ -119,6 +140,8 @@ export function createApp(db, options = {}) {
       from,
       to,
       dateRangeBounds,
+      gutterPhotos,
+      guttersHidden,
     });
     res.send(
       layout({ title: 'Posts', active: 'posts', isAdmin: req.isAdmin, lastUpdated: data.lastUpdated, body })

@@ -3,3 +3,6 @@ node_modules/
 *.sqlite-wal
 *.sqlite-shm
 .env
+
+# Raw full-res DSLR originals for gutter ads (312MB) — only the optimized B&W derivatives in Industry_new2/gutter-photos/ are committed
+photos/

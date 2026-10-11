@@ -32,12 +32,21 @@ export function renderDashboard(
     from = '',
     to = '',
     dateRangeBounds = null,
+    gutterPhotos = [],
+    guttersHidden = false,
   }
 ) {
   const hasAnyData = (filterOptions?.totalCount ?? 0) > 0;
   const state = { search, sort, density, activeMember, view, from, to };
+  // Gutter photo ads (spec): Posts-page-only chrome, rendered here rather
+  // than in layout.js so Import/Review/Login/Post-detail never get it for
+  // free. guttersHidden (the gutters_hidden cookie) suppresses rendering
+  // entirely -- no markup at all -- so a dismissed visitor never sees a
+  // flash of ad content on reload. Shown regardless of hasAnyData: it's page
+  // chrome, not part of the post list.
+  const gutterAds = guttersHidden ? '' : renderGutterAds(gutterPhotos);
   if (!hasAnyData) {
-    return renderEmptyState({ isAdmin, state });
+    return gutterAds + renderEmptyState({ isAdmin, state });
   }
 
   const rail = renderCorrespondentsRail(filterOptions, activeMember, state);
@@ -78,6 +87,7 @@ export function renderDashboard(
         .np-content-row { display:block; }
       }
     </style>
+    ${gutterAds}
     <div data-testid="dashboard-band">
       ${header}
       ${viewToggle}
@@ -92,6 +102,109 @@ export function renderDashboard(
     </div>
   `;
 }
+
+// Fisher-Yates, pure (returns a new array) -- used only to pick which 6 of
+// the 15 gutter photos are visible at page load; rotation afterwards is the
+// client script's job (gutter-ads.js).
+function shuffled(list) {
+  const arr = list.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// Newspaper gutter photo ads (spec): two `position:fixed` <aside>s pinned to
+// the left/right viewport edges, outside the centred 1200px column, each
+// showing 3 of the 15 B&W photos. `photoFilenames` is the full pool (read
+// from disk by app.js, server-side, no hardcoded list); guarded here for an
+// empty/missing list -- renders nothing rather than two empty asides.
+//
+// Entrance (Q9): starts at opacity:0 and is faded in by gutter-ads.js once
+// the card-convergence-blast entrance animation finishes (see that script
+// for the exact hook). z-index:1 keeps it below the content row
+// (.np-content-row is z-index:20) and the convergence overlay (z-index in
+// the tens of thousands in motion.css), and pointer-events are scoped to
+// just the photo/close-button area so the fixed aside's own box never
+// intercepts clicks on the page beneath it.
+//
+// Newspaper look (Q3): var(--texture-paper) (already defined in
+// Industry_new2/tokens/colors.css for the page's own paper-grain) is reused
+// as a multiply-blended overlay for the grain, plus a thin double rule
+// frame in var(--color-text) -- no halftone dot screen.
+//
+// Rotation pool: the full photo list is embedded as a comma-joined
+// data-photos attribute so gutter-ads.js knows every candidate for the 5s
+// cross-fade, not just the 6 initially visible.
+function renderGutterAds(photoFilenames) {
+  if (!Array.isArray(photoFilenames) || photoFilenames.length === 0) return '';
+
+  const pool = shuffled(photoFilenames);
+  const left = pool.slice(0, 3);
+  const right = pool.slice(3, 6);
+  if (left.length === 0 && right.length === 0) return '';
+
+  const slot = (filename) => `
+      <div class="gutter-slot" data-gutter-slot>
+        <img src="/assets/gutter-photos/${esc(filename)}" alt="" loading="lazy" data-gutter-img="${esc(filename)}">
+      </div>`;
+
+  const aside = (testId, label, closeLabel, filenames) => `
+    <aside class="gutter-ads" data-testid="${testId}" aria-label="${esc(label)}">
+      <button type="button" class="gutter-close" data-gutter-close aria-label="${esc(closeLabel)}">&times;</button>
+      ${filenames.map(slot).join('')}
+    </aside>`;
+
+  return `
+    <style>
+      .gutter-ads-root { position:fixed; inset:0; z-index:1; pointer-events:none; opacity:0; transition:opacity 900ms ease; }
+      .gutter-ads-root.gutter-ads-visible { opacity:1; }
+      @media (prefers-reduced-motion: reduce) { .gutter-ads-root { transition:none; } }
+      .gutter-ads {
+        position:fixed; top:50%; transform:translateY(-50%);
+        width:220px; display:flex; flex-direction:column; gap:var(--space-4);
+        pointer-events:auto;
+      }
+      .gutter-ads[data-testid="gutter-left"] { left:max(var(--space-4), calc((100vw - 1200px) / 2 - 220px - var(--space-6))); }
+      .gutter-ads[data-testid="gutter-right"] { right:max(var(--space-4), calc((100vw - 1200px) / 2 - 220px - var(--space-6))); }
+      @media (max-width: 1399px) { .gutter-ads { display:none; } }
+      .gutter-close {
+        align-self:flex-end; width:28px; height:28px; flex:none;
+        background:var(--color-surface); border:var(--rule-mid) solid var(--color-text);
+        font:600 16px/1 var(--font-ui); color:var(--color-text); cursor:pointer;
+      }
+      .gutter-close:hover { background:var(--color-accent-100); }
+      .gutter-close:focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; }
+      .gutter-slot {
+        position:relative; width:220px; height:min(28vh, 300px);
+        background:var(--color-surface);
+        box-shadow:0 0 0 1px var(--color-bg), 0 0 0 5px var(--color-text), var(--shadow-sm);
+        overflow:hidden;
+      }
+      .gutter-slot::after {
+        content:""; position:absolute; inset:0; pointer-events:none;
+        background-image:var(--texture-paper); mix-blend-mode:multiply; opacity:.6;
+      }
+      .gutter-slot img {
+        position:absolute; inset:0; width:100%; height:100%;
+        object-fit:cover; object-position:center; display:block;
+        transition:opacity 450ms ease;
+      }
+      @media (prefers-reduced-motion: reduce) { .gutter-slot img { transition:none; } }
+    </style>
+    <div class="gutter-ads-root" data-testid="gutter-ads-root" data-photos="${esc(photoFilenames.join(','))}">
+      ${aside('gutter-left', 'Gallery', 'Close galleries', left)}
+      ${aside('gutter-right', 'Gallery', 'Close galleries', right)}
+    </div>
+  `;
+}
+
+// Test-only alias: exercises the empty/missing-photo-list guard directly at
+// the view layer, since the HTTP seam always sees this repo's real,
+// populated Industry_new2/gutter-photos/ directory (see
+// dashboard.gutterAds.route.test.js for why).
+export const renderGutterAdsForTest = renderGutterAds;
 
 export const BATCH_SIZE = 18;
 
