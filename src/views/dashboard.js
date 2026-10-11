@@ -15,24 +15,37 @@ import { esc } from './layout.js';
  *   search?: string,
  *   activeMember?: { type: 'member', id: number, displayName: string } | { type: 'pending' } | null,
  *   filterOptions: { totalCount: number, pendingCount: number, members: Array<{ id: number, displayName: string, postCount: number }> },
+ *   from?: string, to?: string,
+ *   dateRangeBounds?: { min: string | null, max: string | null } | null,
  * }} params
  */
 export function renderDashboard(
   { posts },
-  { isAdmin, density = 'cards', sort = 'recent', search = '', activeMember = null, filterOptions, view = 'unread' }
+  {
+    isAdmin,
+    density = 'cards',
+    sort = 'recent',
+    search = '',
+    activeMember = null,
+    filterOptions,
+    view = 'unread',
+    from = '',
+    to = '',
+    dateRangeBounds = null,
+  }
 ) {
   const hasAnyData = (filterOptions?.totalCount ?? 0) > 0;
-  const state = { search, sort, density, activeMember, view };
+  const state = { search, sort, density, activeMember, view, from, to };
   if (!hasAnyData) {
     return renderEmptyState({ isAdmin, state });
   }
 
   const rail = renderCorrespondentsRail(filterOptions, activeMember, state);
   const header = renderHeader(activeMember, posts.length);
-  const controls = renderControls(state, filterOptions, activeMember);
+  const controls = renderControls(state, filterOptions, activeMember, dateRangeBounds);
   const viewToggle = renderViewToggle(state);
   const results =
-    posts.length === 0 ? renderNoResults(search, activeMember) : renderPostList(posts, density, view);
+    posts.length === 0 ? renderNoResults(search, activeMember, state) : renderPostList(posts, density, view);
 
   // Full-width band (header + view toggle + controls) spans the container,
   // then a rule, then a flex content row: the post list takes the freed-up
@@ -144,6 +157,8 @@ function buildHref(state, overrides = {}) {
   if (merged.sort && merged.sort !== 'recent') params.set('sort', merged.sort);
   if (merged.density && merged.density !== 'rows') params.set('density', merged.density);
   if (merged.view && merged.view !== 'unread') params.set('view', merged.view);
+  if (merged.from) params.set('from', merged.from);
+  if (merged.to) params.set('to', merged.to);
 
   const memberParam = 'member' in overrides ? overrides.member : memberParamFor(merged.activeMember);
   if (memberParam) params.set('member', memberParam);
@@ -193,7 +208,7 @@ function renderHeader(activeMember, resultCount) {
   `;
 }
 
-function renderControls(state, filterOptions, activeMember) {
+function renderControls(state, filterOptions, activeMember, dateRangeBounds) {
   const memberSelect = renderMemberSelect(filterOptions, activeMember);
   // No "Order" toggle: the board always lists most-recently-shared first.
   // A share-count order was removed (it ranked self-promotion, not endorsement).
@@ -201,6 +216,7 @@ function renderControls(state, filterOptions, activeMember) {
     ['rows', 'Index'],
     ['cards', 'Columns'],
   ], state.density, 'density-toggle');
+  const dateRangeFilter = renderDateRangeFilter(state, dateRangeBounds);
 
   return `
     <form method="get" action="/" data-testid="dashboard-controls" style="display:flex;flex-wrap:wrap;gap:var(--space-4) var(--space-6);align-items:flex-end;padding-bottom:var(--space-3);margin-bottom:var(--space-4);border-bottom:1px solid var(--color-text)">
@@ -211,8 +227,48 @@ function renderControls(state, filterOptions, activeMember) {
       </div>
       ${densityToggle}
       ${memberSelect}
+      ${dateRangeFilter}
     </form>
   `;
+}
+
+// Date-range filter (spec): two native <input type="date"> inside the same
+// GET form as search/density/member, so the "Apply" button submits every
+// control's current value together -- no hidden inputs needed to preserve
+// the other filters. min/max come from getDateRangeBounds (the
+// member/search/view-filtered set, excluding the date filter itself); From
+// and To mutually constrain each other's bound from whichever is currently
+// selected. An active selection is rendered verbatim even if it now falls
+// outside the recomputed bounds -- never clamped or reset.
+function renderDateRangeFilter(state, bounds) {
+  const boundMin = bounds?.min ?? '';
+  const boundMax = bounds?.max ?? '';
+  const fromAttrs = dateInputAttrs(boundMin, state.to || boundMax);
+  const toAttrs = dateInputAttrs(state.from || boundMin, boundMax);
+  const clearLink = state.from || state.to
+    ? `<a class="btn btn-link" href="${buildHref(state, { from: '', to: '' })}" data-testid="clear-dates">Clear dates</a>`
+    : '';
+
+  return `
+    <div data-testid="date-range-filter" style="display:flex;gap:var(--space-2);align-items:flex-end">
+      <label style="display:flex;flex-direction:column;gap:2px;font:600 11px/1.2 var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--color-muted)">
+        From
+        <input class="input" type="date" name="from" value="${esc(state.from)}"${fromAttrs} aria-label="From date">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:2px;font:600 11px/1.2 var(--font-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--color-muted)">
+        To
+        <input class="input" type="date" name="to" value="${esc(state.to)}"${toAttrs} aria-label="To date">
+      </label>
+      <button type="submit" class="btn btn-sm" data-testid="date-range-apply">Apply</button>
+      ${clearLink}
+    </div>
+  `;
+}
+
+function dateInputAttrs(min, max) {
+  const minAttr = min ? ` min="${esc(min)}"` : '';
+  const maxAttr = max ? ` max="${esc(max)}"` : '';
+  return `${minAttr}${maxAttr}`;
 }
 
 function radioToggle(label, name, options, current, testid) {
@@ -305,14 +361,29 @@ function initials(name) {
   );
 }
 
-function renderNoResults(search, activeMember) {
-  const title = search ? `No posts match “${esc(search)}”` : 'No posts for this filter';
+function renderNoResults(search, activeMember, state = {}) {
+  // Date-range empty state (spec) takes priority over the generic
+  // search/filter one -- it's the filter most likely to be the actual cause
+  // when it's active, and it carries its own targeted Clear dates fix.
+  const dateRangeActive = Boolean(state.from || state.to);
+  const title = dateRangeActive
+    ? 'No posts shared in this date range'
+    : search
+    ? `No posts match “${esc(search)}”`
+    : 'No posts for this filter';
+  const clearDatesLink = dateRangeActive
+    ? `<a class="btn btn-link" href="${buildHref(state, { from: '', to: '' })}" data-testid="clear-dates">Clear dates</a>`
+    : '';
+
   return `
     <div data-testid="no-results" class="empty">
       <div class="kicker">No stories filed</div>
       <h2 class="headline headline-lg" style="margin:var(--space-2) 0">${title}</h2>
       <p class="standfirst">Try another word, or clear the correspondent filter.</p>
-      <a class="btn" href="/" data-testid="clear-filters" style="margin-top:var(--space-2)">Clear search and filters</a>
+      <div style="display:flex;gap:var(--space-3);align-items:center;margin-top:var(--space-2)">
+        <a class="btn" href="/" data-testid="clear-filters">Clear search and filters</a>
+        ${clearDatesLink}
+      </div>
     </div>
   `;
 }

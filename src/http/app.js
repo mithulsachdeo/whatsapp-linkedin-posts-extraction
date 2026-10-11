@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDashboard, getMemberFilterOptions, getPostDetail, getPostUrl } from '../query/dashboard.js';
+import { getDashboard, getDateRangeBounds, getMemberFilterOptions, getPostDetail, getPostUrl } from '../query/dashboard.js';
 import { readIdsFromCookieHeader, addReadId, removeReadId, serializeReadCookie } from './readCookie.js';
 import { parseDensity, densityFromCookieHeader, serializeDensityCookie } from './densityCookie.js';
 import {
@@ -95,6 +95,17 @@ export function createApp(db, options = {}) {
       }
     }
 
+    // Date-range filter (spec): picker bounds are computed from the
+    // member/search/view-filtered set BEFORE from/to are applied, so the
+    // date filter never constrains its own bounds. ?from/?to are plain
+    // strings here -- a malformed value is ignored by getDashboard/the view,
+    // not validated on this side, same as the member-id lookup above.
+    const dateRangeBounds = getDateRangeBounds(db, queryOptions);
+    const from = typeof req.query.from === 'string' ? req.query.from : '';
+    const to = typeof req.query.to === 'string' ? req.query.to : '';
+    if (from) queryOptions.from = from;
+    if (to) queryOptions.to = to;
+
     const data = getDashboard(db, queryOptions);
     const filterOptions = getMemberFilterOptions(db);
     const body = renderDashboard(data, {
@@ -105,6 +116,9 @@ export function createApp(db, options = {}) {
       activeMember,
       filterOptions,
       view,
+      from,
+      to,
+      dateRangeBounds,
     });
     res.send(
       layout({ title: 'Posts', active: 'posts', isAdmin: req.isAdmin, lastUpdated: data.lastUpdated, body })
@@ -135,6 +149,13 @@ export function createApp(db, options = {}) {
         activeMember = { type: 'member', id: member.id, displayName: member.displayName };
       }
     }
+
+    // Date-range filter (spec): must round-trip through this pagination
+    // fragment route the same way as /.
+    const from = typeof req.query.from === 'string' ? req.query.from : '';
+    const to = typeof req.query.to === 'string' ? req.query.to : '';
+    if (from) queryOptions.from = from;
+    if (to) queryOptions.to = to;
 
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
     const limit = Math.max(1, parseInt(req.query.limit, 10) || BATCH_SIZE);

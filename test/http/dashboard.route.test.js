@@ -227,8 +227,9 @@ test('GET / renders a "Search" submit button grouped directly with the search in
     // The submit button is relabelled "Search" (it only submits the typed
     // search text -- the Layout toggle and member select auto-submit on
     // change) and sits immediately next to the search input, not after the
-    // other controls.
-    assert.doesNotMatch(res.text, />Apply</);
+    // other controls. (The date-range filter's own "Apply" button is a
+    // separate control further along the same form -- see
+    // dashboard.dateRange.route.test.js.)
     const searchGroupMatch = res.text.match(
       /<input class="input" type="search" name="q"[^>]*>\s*<button type="submit" class="btn btn-sm">Search<\/button>/
     );

@@ -4,6 +4,7 @@
 // results back out here rather than poking at internal tables directly.
 
 import { groupName } from '../ingest/groups.js';
+import { istDayStartUtc, istDayEndUtc, utcToIstCalendarDate } from './istDateRange.js';
 
 // Only one order is meaningful. Primary key: preview availability -- posts
 // with a real preview to show (admin-edited or successfully fetched) rank
@@ -19,18 +20,12 @@ const SORTS = {
     '(CASE WHEN p.preview_author IS NOT NULL OR p.preview_excerpt IS NOT NULL THEN 0 ELSE 1 END) ASC, p.last_shared_at DESC, p.id DESC',
 };
 
-/**
- * @param {import('node:sqlite').DatabaseSync} db
- * @param {{
- *   sort?: 'recent', memberId?: number, pending?: boolean, search?: string,
- *   view?: 'unread' | 'read' | 'all', readIds?: number[],
- * }} [options]
- * @returns {{ posts: Array<object>, lastUpdated: string | null }}
- */
-export function getDashboard(db, options = {}) {
-  const sort = SORTS[options.sort] ? options.sort : 'recent';
-  const orderBy = SORTS[sort];
-
+// Shared member/pending/search/view condition-building, used by both the
+// main dashboard query and the date-range picker's bounds query. Deliberately
+// never looks at options.from/options.to (that's buildDateRangeCondition,
+// below) -- the bounds query calls only this one, which is precisely how the
+// date filter excludes itself from its own bounds.
+function buildFilterConditions(options) {
   const params = [];
   const conditions = [];
 
@@ -70,6 +65,58 @@ export function getDashboard(db, options = {}) {
     // than special-casing an empty `IN (...)` list.
     conditions.push(readIds.length > 0 ? `p.id IN (${readIds.map(() => '?').join(',')})` : '0');
     params.push(...readIds);
+  }
+
+  return { conditions, params };
+}
+
+// Date-range filter (spec): a post matches if ANY of its sharing_events
+// falls within [from, to], not just its first/last share -- hence a separate
+// EXISTS rather than filtering the main p/se join. from/to are IST calendar
+// days (see istDateRange.js); a malformed value is ignored rather than
+// erroring, same as an unknown ?member value in buildFilterConditions above.
+// Kept separate from buildFilterConditions so getDateRangeBounds can reuse
+// the other filters while excluding this one from its own bounds.
+function buildDateRangeCondition(options) {
+  const fromUtc = options.from ? istDayStartUtc(options.from) : null;
+  const toUtc = options.to ? istDayEndUtc(options.to) : null;
+  if (!fromUtc && !toUtc) return null;
+
+  const clauses = [];
+  const params = [];
+  if (fromUtc) {
+    clauses.push('dse.message_timestamp >= ?');
+    params.push(fromUtc);
+  }
+  if (toUtc) {
+    clauses.push('dse.message_timestamp <= ?');
+    params.push(toUtc);
+  }
+  return {
+    condition: `EXISTS (SELECT 1 FROM sharing_events dse WHERE dse.post_id = p.id AND ${clauses.join(' AND ')})`,
+    params,
+  };
+}
+
+/**
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {{
+ *   sort?: 'recent', memberId?: number, pending?: boolean, search?: string,
+ *   view?: 'unread' | 'read' | 'all', readIds?: number[],
+ *   from?: string, to?: string,
+ * }} [options]
+ * @returns {{ posts: Array<object>, lastUpdated: string | null }}
+ */
+export function getDashboard(db, options = {}) {
+  const sort = SORTS[options.sort] ? options.sort : 'recent';
+  const orderBy = SORTS[sort];
+
+  const { conditions, params } = buildFilterConditions(options);
+
+  const dateRange = buildDateRangeCondition(options);
+  if (dateRange) {
+    conditions.push(dateRange.condition);
+    params.push(...dateRange.params);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -124,6 +171,38 @@ export function getDashboard(db, options = {}) {
       sharers: sharersByPost.get(row.id) ?? [],
     })),
     lastUpdated: lastUpdatedRow?.lastUpdated ?? null,
+  };
+}
+
+/**
+ * Enabled min/max bounds for the date-range picker (spec): MIN/MAX of
+ * message_timestamp over the set filtered by member/search/view -- but NOT
+ * by the date range itself (options.from/to are ignored here; otherwise the
+ * bounds would shrink to whatever was just picked, which is circular).
+ * Expressed as IST calendar dates for the <input type="date"> min/max
+ * attributes. Null for both when the filtered set has zero posts.
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {{ memberId?: number, pending?: boolean, search?: string, view?: 'unread'|'read'|'all', readIds?: number[] }} [options]
+ * @returns {{ min: string | null, max: string | null }}
+ */
+export function getDateRangeBounds(db, options = {}) {
+  const { conditions, params } = buildFilterConditions(options);
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const row = db
+    .prepare(
+      `
+      SELECT MIN(se.message_timestamp) AS minTs, MAX(se.message_timestamp) AS maxTs
+      FROM posts p
+      JOIN sharing_events se ON se.post_id = p.id
+      ${whereClause}
+      `
+    )
+    .get(...params);
+
+  return {
+    min: utcToIstCalendarDate(row?.minTs ?? null),
+    max: utcToIstCalendarDate(row?.maxTs ?? null),
   };
 }
 
