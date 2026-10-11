@@ -185,7 +185,7 @@ function renderGutterAds(photoFilenames) {
       .gutter-close:hover { background:var(--color-accent-100); }
       .gutter-close:focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; }
       .gutter-slot {
-        position:relative; width:220px; height:min(28vh, 300px);
+        position:relative; width:100%; height:min(28vh, 300px);
         background:var(--color-surface);
         box-shadow:0 0 0 1px var(--color-bg), 0 0 0 5px var(--color-text), var(--shadow-sm);
         overflow:hidden;
