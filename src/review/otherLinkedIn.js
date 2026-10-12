@@ -22,11 +22,11 @@ function getOpenItem(db, id) {
  * Dismiss: confirms the classifier was right, this link is not a post.
  * Reversible via `undoOtherLinkedInAction`.
  */
-export function dismissOtherLinkedInItem(db, id) {
-  const item = getOpenItem(db, id);
+export async function dismissOtherLinkedInItem(db, id) {
+  const item = await getOpenItem(db, id);
   if (!item) return false;
 
-  db.prepare(
+  await db.prepare(
     `UPDATE review_items SET status = 'DISMISSED', resolved_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
      WHERE id = ?`
   ).run(id);
@@ -41,25 +41,24 @@ export function dismissOtherLinkedInItem(db, id) {
  * import had classified it as a POST originally. An unresolved sender still
  * produces an UNKNOWN_SENDER review item (pending attribution), same as
  * ingestion.
- * @returns {boolean} whether an open OTHER_LINKEDIN item with this id existed
+ * @returns {Promise<boolean>} whether an open OTHER_LINKEDIN item with this id existed
  */
-export function promoteOtherLinkedInItem(db, id) {
-  const item = getOpenItem(db, id);
+export async function promoteOtherLinkedInItem(db, id) {
+  const item = await getOpenItem(db, id);
   if (!item) return false;
 
   const payload = JSON.parse(item.payload);
   const canonicalUrl = canonicalizeAnyLinkedInUrl(payload.url) ?? payload.url;
 
-  db.exec('BEGIN');
-  try {
-    const { id: postId, isNew: postWasNew } = upsertPost(db, canonicalUrl);
+  return db.transaction(async (tx) => {
+    const { id: postId, isNew: postWasNew } = await upsertPost(tx, canonicalUrl);
 
-    const memberId = resolveMember(db, payload.rawSender);
+    const memberId = await resolveMember(tx, payload.rawSender);
     if (memberId === null) {
-      ensureUnknownSenderReviewItem(db, payload.rawSender);
+      await ensureUnknownSenderReviewItem(tx, payload.rawSender);
     }
 
-    const sharingEventInserted = insertSharingEvent(db, {
+    const sharingEventInserted = await insertSharingEvent(tx, {
       postId,
       groupId: payload.groupId,
       rawSender: payload.rawSender,
@@ -68,10 +67,10 @@ export function promoteOtherLinkedInItem(db, id) {
       note: payload.note,
     });
     if (sharingEventInserted) {
-      touchPostTimestamps(db, postId, payload.timestamp);
+      await touchPostTimestamps(tx, postId, payload.timestamp);
     }
 
-    db.prepare(
+    await tx.prepare(
       `UPDATE review_items SET status = 'RESOLVED', resolved_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), payload = ?
        WHERE id = ?`
     ).run(
@@ -79,12 +78,8 @@ export function promoteOtherLinkedInItem(db, id) {
       id
     );
 
-    db.exec('COMMIT');
     return true;
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+  });
 }
 
 /**
@@ -93,11 +88,11 @@ export function promoteOtherLinkedInItem(db, id) {
  * the sharing event it created and -- if the Post was newly created by that
  * promotion and now has no other sharing events -- the Post too, mirroring
  * `undoAliasMapping`'s member cleanup.
- * @returns {boolean} whether a dismissed/resolved OTHER_LINKEDIN item with
+ * @returns {Promise<boolean>} whether a dismissed/resolved OTHER_LINKEDIN item with
  *   this id existed to undo
  */
-export function undoOtherLinkedInAction(db, id) {
-  const item = db
+export async function undoOtherLinkedInAction(db, id) {
+  const item = await db
     .prepare(
       "SELECT * FROM review_items WHERE id = ? AND kind = 'OTHER_LINKEDIN' AND status IN ('DISMISSED', 'RESOLVED')"
     )
@@ -106,35 +101,30 @@ export function undoOtherLinkedInAction(db, id) {
 
   const payload = JSON.parse(item.payload);
 
-  db.exec('BEGIN');
-  try {
+  return db.transaction(async (tx) => {
     if (item.status === 'RESOLVED' && payload.promotedPostId) {
       const { promotedPostId, promotedPostWasNew, sharingEventInserted, ...originalPayload } = payload;
 
       if (sharingEventInserted) {
-        db.prepare(
+        await tx.prepare(
           `DELETE FROM sharing_events
            WHERE post_id = ? AND group_id = ? AND raw_sender = ? AND message_timestamp = ?`
         ).run(promotedPostId, originalPayload.groupId, originalPayload.rawSender, originalPayload.timestamp);
       }
 
       if (promotedPostWasNew) {
-        db.prepare(
+        await tx.prepare(
           'DELETE FROM posts WHERE id = ? AND NOT EXISTS (SELECT 1 FROM sharing_events WHERE post_id = ?)'
         ).run(promotedPostId, promotedPostId);
       }
 
-      db.prepare(
+      await tx.prepare(
         "UPDATE review_items SET status = 'OPEN', resolved_at = NULL, payload = ? WHERE id = ?"
       ).run(JSON.stringify(originalPayload), id);
     } else {
-      db.prepare("UPDATE review_items SET status = 'OPEN', resolved_at = NULL WHERE id = ?").run(id);
+      await tx.prepare("UPDATE review_items SET status = 'OPEN', resolved_at = NULL WHERE id = ?").run(id);
     }
 
-    db.exec('COMMIT');
     return true;
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+  });
 }
