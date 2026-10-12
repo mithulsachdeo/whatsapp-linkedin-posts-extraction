@@ -9,19 +9,19 @@ import { openDb } from '../../src/db/connection.js';
 import { migrate } from '../../src/db/migrate.js';
 
 /**
- * @returns {{ db: import('node:sqlite').DatabaseSync, dir: string, close: () => void }}
+ * @returns {Promise<{ db: import('../../src/db/connection.js').Adapter, dir: string, close: () => Promise<void> }>}
  */
-export function createTestDb() {
+export async function createTestDb() {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'postboard-test-'));
   const dbPath = path.join(dir, 'test.sqlite');
-  const db = openDb(dbPath);
-  migrate(db);
+  const db = await openDb({ url: `file:${dbPath}` });
+  await migrate(db);
 
   return {
     db,
     dir,
-    close() {
-      db.close();
+    async close() {
+      await db.close();
       rmSync(dir, { recursive: true, force: true });
     },
   };

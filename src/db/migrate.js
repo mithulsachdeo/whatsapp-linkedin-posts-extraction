@@ -20,12 +20,12 @@ const BACKFILL_SHORT_LINKS_NAME = '0003_backfill_unresolved_short_links';
 
 /**
  * Apply any migrations in `migrationsDir` not yet recorded as applied.
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {import('../db/connection.js').Adapter} db
  * @param {string} [migrationsDir]
- * @returns {string[]} names of migrations applied by this call
+ * @returns {Promise<string[]>} names of migrations applied by this call
  */
-export function migrate(db, migrationsDir = DEFAULT_MIGRATIONS_DIR) {
-  db.exec(`
+export async function migrate(db, migrationsDir = DEFAULT_MIGRATIONS_DIR) {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       name TEXT PRIMARY KEY,
       applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -33,7 +33,7 @@ export function migrate(db, migrationsDir = DEFAULT_MIGRATIONS_DIR) {
   `);
 
   const applied = new Set(
-    db.prepare('SELECT name FROM schema_migrations').all().map((row) => row.name)
+    (await db.prepare('SELECT name FROM schema_migrations').all()).map((row) => row.name)
   );
 
   const files = readdirSync(migrationsDir)
@@ -44,25 +44,23 @@ export function migrate(db, migrationsDir = DEFAULT_MIGRATIONS_DIR) {
   for (const file of files) {
     if (applied.has(file)) continue;
     const sql = readFileSync(path.join(migrationsDir, file), 'utf8');
-    db.exec('BEGIN');
     try {
-      db.exec(sql);
-      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(file);
-      db.exec('COMMIT');
+      await db.transaction(async (tx) => {
+        await tx.executeMultiple(sql);
+        await tx.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(file);
+      });
     } catch (err) {
-      db.exec('ROLLBACK');
       throw new Error(`Migration ${file} failed: ${err.message}`, { cause: err });
     }
     newlyApplied.push(file);
   }
 
   if (!applied.has(BACKFILL_SHORT_LINKS_NAME)) {
-    // Not wrapped in an outer BEGIN/COMMIT: backfillUnresolvedShortLinks
-    // manages its own transaction per review item (SQLite has no nested
-    // transactions).
+    // Not wrapped in the migration transaction above: backfillUnresolvedShortLinks
+    // manages its own transaction per review item (no nested transactions).
     try {
-      backfillUnresolvedShortLinks(db);
-      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(BACKFILL_SHORT_LINKS_NAME);
+      await backfillUnresolvedShortLinks(db);
+      await db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(BACKFILL_SHORT_LINKS_NAME);
     } catch (err) {
       throw new Error(`Migration ${BACKFILL_SHORT_LINKS_NAME} failed: ${err.message}`, { cause: err });
     }
