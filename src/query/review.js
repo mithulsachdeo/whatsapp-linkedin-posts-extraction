@@ -3,10 +3,10 @@
 
 /**
  * @param {import('node:sqlite').DatabaseSync} db
- * @returns {Array<{ id: number, rawSender: string, shareCount: number, firstSeen: string|null }>}
+ * @returns {Promise<Array<{ id: number, rawSender: string, shareCount: number, firstSeen: string|null }>>}
  */
-export function getUnknownSenderReviewItems(db) {
-  const rows = db
+export async function getUnknownSenderReviewItems(db) {
+  const rows = await db
     .prepare(
       `SELECT id, payload, created_at AS createdAt FROM review_items
        WHERE kind = 'UNKNOWN_SENDER' AND status = 'OPEN'
@@ -14,29 +14,31 @@ export function getUnknownSenderReviewItems(db) {
     )
     .all();
 
-  return rows.map((row) => {
+  const items = [];
+  for (const row of rows) {
     const rawSender = JSON.parse(row.payload).rawSender;
-    const stats = db
+    const stats = await db
       .prepare(
         `SELECT COUNT(*) AS shareCount, MIN(message_timestamp) AS firstSeen
          FROM sharing_events WHERE raw_sender = ?`
       )
       .get(rawSender);
-    return {
+    items.push({
       id: row.id,
       rawSender,
       shareCount: stats.shareCount,
       firstSeen: stats.firstSeen ?? null,
-    };
-  });
+    });
+  }
+  return items;
 }
 
 /**
  * @param {import('node:sqlite').DatabaseSync} db
- * @returns {Array<{ id: number, url: string, rawSender: string, timestamp: string, note: string|null, createdAt: string }>}
+ * @returns {Promise<Array<{ id: number, url: string, rawSender: string, timestamp: string, note: string|null, createdAt: string }>>}
  */
-export function getOtherLinkedInReviewItems(db) {
-  const rows = db
+export async function getOtherLinkedInReviewItems(db) {
+  const rows = await db
     .prepare(
       `SELECT id, payload, created_at AS createdAt FROM review_items
        WHERE kind = 'OTHER_LINKEDIN' AND status = 'OPEN'
@@ -59,10 +61,10 @@ export function getOtherLinkedInReviewItems(db) {
 
 /**
  * @param {import('node:sqlite').DatabaseSync} db
- * @returns {Array<{ id: number, displayName: string }>}
+ * @returns {Promise<Array<{ id: number, displayName: string }>>}
  */
-export function getMembers(db) {
-  return db
+export async function getMembers(db) {
+  return await db
     .prepare('SELECT id, display_name AS displayName FROM members ORDER BY display_name COLLATE NOCASE')
     .all();
 }

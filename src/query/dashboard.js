@@ -105,9 +105,9 @@ function buildDateRangeCondition(options) {
  *   view?: 'unread' | 'read' | 'all', readIds?: number[],
  *   from?: string, to?: string,
  * }} [options]
- * @returns {{ posts: Array<object>, lastUpdated: string | null }}
+ * @returns {Promise<{ posts: Array<object>, lastUpdated: string | null }>}
  */
-export function getDashboard(db, options = {}) {
+export async function getDashboard(db, options = {}) {
   const sort = SORTS[options.sort] ? options.sort : 'recent';
   const orderBy = SORTS[sort];
 
@@ -121,7 +121,7 @@ export function getDashboard(db, options = {}) {
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const rows = db
+  const rows = await db
     .prepare(
       `
       SELECT
@@ -145,11 +145,11 @@ export function getDashboard(db, options = {}) {
     )
     .all(...params);
 
-  const lastUpdatedRow = db
+  const lastUpdatedRow = await db
     .prepare("SELECT MAX(completed_at) AS lastUpdated FROM import_batches WHERE status = 'COMPLETE'")
     .get();
 
-  const sharersByPost = getSharersByPost(db, rows.map((row) => row.id));
+  const sharersByPost = await getSharersByPost(db, rows.map((row) => row.id));
 
   return {
     posts: rows.map((row) => ({
@@ -183,13 +183,13 @@ export function getDashboard(db, options = {}) {
  * attributes. Null for both when the filtered set has zero posts.
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {{ memberId?: number, pending?: boolean, search?: string, view?: 'unread'|'read'|'all', readIds?: number[] }} [options]
- * @returns {{ min: string | null, max: string | null }}
+ * @returns {Promise<{ min: string | null, max: string | null }>}
  */
-export function getDateRangeBounds(db, options = {}) {
+export async function getDateRangeBounds(db, options = {}) {
   const { conditions, params } = buildFilterConditions(options);
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  const row = db
+  const row = await db
     .prepare(
       `
       SELECT MIN(se.message_timestamp) AS minTs, MAX(se.message_timestamp) AS maxTs
@@ -213,14 +213,16 @@ export function getDateRangeBounds(db, options = {}) {
  * surfaced as a filter choice alongside each resolved member, and omitted
  * entirely once no post has an unresolved sharer.
  * @param {import('node:sqlite').DatabaseSync} db
- * @returns {{ totalCount: number, pendingCount: number, members: Array<{ id: number, displayName: string, postCount: number }> }}
+ * @returns {Promise<{ totalCount: number, pendingCount: number, members: Array<{ id: number, displayName: string, postCount: number }> }>}
  */
-export function getMemberFilterOptions(db) {
-  const totalCount = db.prepare('SELECT COUNT(*) AS count FROM posts').get().count;
-  const pendingCount = db
-    .prepare('SELECT COUNT(DISTINCT se.post_id) AS count FROM sharing_events se WHERE se.member_id IS NULL')
-    .get().count;
-  const members = db
+export async function getMemberFilterOptions(db) {
+  const totalCount = (await db.prepare('SELECT COUNT(*) AS count FROM posts').get()).count;
+  const pendingCount = (
+    await db
+      .prepare('SELECT COUNT(DISTINCT se.post_id) AS count FROM sharing_events se WHERE se.member_id IS NULL')
+      .get()
+  ).count;
+  const members = await db
     .prepare(
       `SELECT m.id, m.display_name AS displayName, COUNT(DISTINCT se.post_id) AS postCount
        FROM members m
@@ -242,16 +244,16 @@ export function getMemberFilterOptions(db) {
  * optional note. The earliest event is flagged `isFirstShare`.
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {number} postId
- * @returns {{
+ * @returns {Promise<{
  *   id: number, url: string,
  *   previewAuthor: string|null, previewRole: string|null, previewExcerpt: string|null, previewUnavailable: boolean,
  *   firstSharedAt: string|null, lastSharedAt: string|null,
  *   shareCount: number, distinctSharerCount: number, pendingAttribution: boolean,
  *   shares: Array<{ id: number, displayName: string|null, rawSender: string, groupId: string, groupName: string, timestamp: string, note: string|null, isFirstShare: boolean }>
- * } | null}
+ * } | null>}
  */
-export function getPostDetail(db, postId) {
-  const post = db
+export async function getPostDetail(db, postId) {
+  const post = await db
     .prepare(
       `SELECT
         p.id,
@@ -269,7 +271,7 @@ export function getPostDetail(db, postId) {
 
   if (!post) return null;
 
-  const shareRows = db
+  const shareRows = await db
     .prepare(
       `SELECT
         se.id,
@@ -324,19 +326,19 @@ export function getPostDetail(db, postId) {
  * to stay cheap since it's on the hot path of every outbound click.
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {number} postId
- * @returns {string | null}
+ * @returns {Promise<string | null>}
  */
-export function getPostUrl(db, postId) {
-  const row = db.prepare('SELECT canonical_url AS url FROM posts WHERE id = ?').get(postId);
+export async function getPostUrl(db, postId) {
+  const row = await db.prepare('SELECT canonical_url AS url FROM posts WHERE id = ?').get(postId);
   return row?.url ?? null;
 }
 
-function getSharersByPost(db, postIds) {
+async function getSharersByPost(db, postIds) {
   const byPost = new Map();
   if (postIds.length === 0) return byPost;
 
   const placeholders = postIds.map(() => '?').join(',');
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT DISTINCT se.post_id AS postId, se.raw_sender AS rawSender, m.display_name AS displayName
        FROM sharing_events se
