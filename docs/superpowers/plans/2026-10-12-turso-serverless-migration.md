@@ -10,6 +10,22 @@
 
 **Spec:** This plan has no separate design spec; it implements the hosting decision recorded in the 2026-10-12 session (free-host requirement → Turso + free serverless/persistent-process compute) and preserves the behavior specified in `docs/superpowers/specs/2026-09-30-linkedin-post-discovery-design.md` and decisions D1–D21. Behavior must not change; only the storage backend and sync→async shape change.
 
+## Verified facts (libSQL spike, @libsql/client@0.18.0, 2026-10-12)
+
+A throwaway spike confirmed the adapter design against the real library:
+- `createClient({ url: ':memory:' })` works; `execute({ sql, args })` binds positional `?` from the array.
+- Result shape: `{ columns, columnTypes, rows (array of name-accessible objects), rowsAffected (number), lastInsertRowid (BigInt) }`.
+- **`intMode` defaults to `number`** — SELECTed INTEGER columns are JS numbers, so `row.id === Number(x)` holds. No `intMode` config needed.
+- `lastInsertRowid` is a **BigInt** → `Number()` it (already done at the 3 sites: `aliases.js:46`, `ingest.js:214,404`).
+- `rowsAffected` behaves exactly like node:sqlite's `.changes` (1 on match, 0 on no-match) — this is the C1 fix.
+- `executeMultiple(script)` runs multi-statement SQL; `execute()` also accepts multi-statement but we still use `executeMultiple` for migration files.
+- `transaction('write')` exposes `execute`, `executeMultiple`, `batch`; **commit persists, rollback undoes** (verified).
+- `PRAGMA foreign_keys = ON` enforces `ON DELETE CASCADE` on the embedded path and stays on for later statements. **Remote-Turso FK enforcement is still unverified** — confirm in Task 14 against a real `libsql://` DB (the schema relies on cascade deletes in `ingest.js:339,367` and `otherLinkedIn.js`).
+
+## Audit corrections folded in
+
+This plan was revised after a codebase audit. Key corrections: the adapter exposes `changes` (C1); `ingest.js` has **3** transactions not 1 (C2, Task 8); transaction bodies must thread `tx` into the shared single-statement helpers (C3, Tasks 5/6/8); the real test seam is **`createTestDb`** in `test/helpers/testDb.js`, made async in a dedicated Task 2b (M1); the WAL assertion and two string-`:memory:` tests are fixed (M2/M3); `watchedFolders.js` is deleted with folder-watch (M4); the post-commit path is two `Promise.all` passes returning `*Settled` (M5). The nested-transaction fear was investigated and is **unfounded** — no transaction-wrapped function calls another.
+
 ## Global Constraints
 
 - **No behavior change.** Every existing test must still pass (adjusted only for `await`). The dashboard, attribution, dedup, review, import, preview, date-range, and gutter features behave identically. 258 tests is the floor.
@@ -69,7 +85,7 @@ Any function containing one of these becomes `async` and returns a `Promise`; ev
 **Interfaces:**
 - Produces: `resolveDbConfig(env = process.env) → { url: string, authToken?: string }`
 - Produces: `async openDb(config) → Adapter` where
-  `Adapter = { exec(sql): Promise<void>, executeMultiple(sql): Promise<void>, prepare(sql): { get(...a): Promise<object|undefined>, all(...a): Promise<object[]>, run(...a): Promise<{ rowsAffected: number, lastInsertRowid: bigint }> }, transaction(fn: (tx: Adapter) => Promise<T>): Promise<T>, close(): Promise<void> }`
+  `Adapter = { exec(sql): Promise<void>, executeMultiple(sql): Promise<void>, prepare(sql): { get(...a): Promise<object|undefined>, all(...a): Promise<object[]>, run(...a): Promise<{ rowsAffected: number, changes: number, lastInsertRowid: bigint }> }, transaction(fn: (tx: Adapter) => Promise<T>): Promise<T>, close(): Promise<void> }`
 
 - [ ] **Step 1: Add the dependency**
 
@@ -90,6 +106,9 @@ test('openDb runs exec, prepare/get/all/run against in-memory libSQL', async () 
   await db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)');
   const r = await db.prepare('INSERT INTO t (name) VALUES (?)').run('alice');
   assert.equal(Number(r.lastInsertRowid), 1);
+  assert.equal(r.changes, 1);            // C1: .changes must alias rowsAffected
+  const noop = await db.prepare('UPDATE t SET name = ? WHERE id = ?').run('x', 999);
+  assert.equal(noop.changes, 0);         // no-match → changes 0, like node:sqlite
   const row = await db.prepare('SELECT name FROM t WHERE id = ?').get(1);
   assert.equal(row.name, 'alice');
   const rows = await db.prepare('SELECT * FROM t').all();
@@ -161,7 +180,11 @@ function wrap(exec) {
         all: async (...args) => (await exec({ sql, args })).rows,
         run: async (...args) => {
           const r = await exec({ sql, args });
-          return { rowsAffected: r.rowsAffected, lastInsertRowid: r.lastInsertRowid };
+          // `changes` aliases rowsAffected — the codebase reads result.changes
+          // (node:sqlite idiom, e.g. insertSharingEvent at ingest.js:385). Omit
+          // it and dedup/attribution silently break (C1). lastInsertRowid is a
+          // BigInt; callers Number() it.
+          return { rowsAffected: r.rowsAffected, changes: r.rowsAffected, lastInsertRowid: r.lastInsertRowid };
         },
       };
     },
@@ -229,9 +252,11 @@ In `src/db/migrate.js`:
 - Remove the raw `db.exec('BEGIN'/'COMMIT'/'ROLLBACK')` lines.
 - Keep the existing "backfill is not wrapped in the outer transaction" behavior: call `await backfillUnresolvedShortLinks(db)` (now async, Task 8-adjacent) **after** its migration's transaction commits.
 
-- [ ] **Step 2: Update the migrate test to await**
+- [ ] **Step 2: Update `test/db/migrate.test.js` (M3)**
 
-Change the test that calls `migrate(db)` to `await migrate(await openDb({ url: ':memory:' }))` and `await` any assertions' queries. Assert the schema exists (e.g., `await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='posts'").get()` is defined).
+- Change `const db = openDb(...)` to `const db = await openDb({ url: ':memory:' })` and every `migrate(db)` call (lines ~27, ~116) to `await migrate(db)` (it returns a Promise now; keep asserting on its resolved return array if those assertions exist).
+- **Delete the WAL assertion** at lines ~34-39 (`PRAGMA journal_mode` → `'wal'`): WAL is dropped (libSQL manages storage) and the test seam is `:memory:`. Replace it, if a positive check is wanted, with a schema-exists assertion: `assert.ok(await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='posts'").get())`.
+- `await` any other query in the test.
 
 - [ ] **Step 3: Run**
 
@@ -244,6 +269,60 @@ Expected: PASS.
 git add src/db/migrate.js test/db/migrate.test.js
 git commit -m "feat: async migrations via executeMultiple + transaction"
 ```
+
+---
+
+### Task 2b: Make the test harness async (M1 — the biggest mechanical change)
+
+**Files:**
+- Modify: `test/helpers/testDb.js` (the real test seam)
+- Modify: `test/http/card-motion-animation.test.js`, `test/http/edition-dispatches.test.js` (M2 — they open the DB directly with a string)
+
+**Interfaces:**
+- Produces: `async createTestDb() → { db: Adapter, close: () => Promise<void> }`
+
+Why this task exists: **~24 of 30 DB-touching test files get their DB via `const { db, close } = createTestDb();`** (`test/helpers/testDb.js:14-27`), which today calls the sync `openDb(dbPath)` + sync `migrate(db)` against a temp **file**. Once those are async, `createTestDb` and its `close()` are async, so **every** call site becomes `const { db, close } = await createTestDb();` and `await close();`. Do this once here so Tasks 3-9 can rely on it; those tasks' "update the tests to await" steps then mean only awaiting the query/command calls, not re-plumbing DB setup.
+
+- [ ] **Step 1: Rewrite `createTestDb` to async in-memory**
+
+```javascript
+// test/helpers/testDb.js
+import { openDb } from '../../src/db/connection.js';
+import { migrate } from '../../src/db/migrate.js';
+
+export async function createTestDb() {
+  const db = await openDb({ url: ':memory:' });
+  await migrate(db);
+  return { db, close: () => db.close() };
+}
+```
+
+(Drops the temp-file plumbing — `:memory:` is faster and isolated per call. Remove any `fs`/`os.tmpdir`/unlink code and the sync `node:sqlite` import.)
+
+- [ ] **Step 2: Convert the two direct-open tests (M2)**
+
+In `test/http/card-motion-animation.test.js:9` and `test/http/edition-dispatches.test.js:9`, change `const db = openDb(':memory:'); migrate(db);` to:
+
+```javascript
+const db = await openDb({ url: ':memory:' });
+await migrate(db);
+```
+
+(and make the enclosing `beforeEach`/test `async`). These are not `*.route.test.js`, so they're easy to miss — they're listed here explicitly.
+
+- [ ] **Step 3: Run the full suite to see the blast radius**
+
+Run: `node --test`
+Expected: MANY failures (every test using `createTestDb` now gets a Promise, not `{db, close}`). This is expected — Tasks 3-9 convert each call site to `await createTestDb()` as part of converting that area's tests. Do not try to fix all call sites here; fix them task-by-task so each stays reviewable. Commit the harness change alone.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add test/helpers/testDb.js test/http/card-motion-animation.test.js test/http/edition-dispatches.test.js
+git commit -m "test: async createTestDb harness (:memory:) + direct-open tests"
+```
+
+Note for all of Tasks 3-9: wherever a test does `const { db, close } = createTestDb()` / `close()`, make it `await createTestDb()` / `await close()`, and make the enclosing hook/test `async`.
 
 ---
 
@@ -263,7 +342,7 @@ git commit -m "feat: async migrations via executeMultiple + transaction"
 
 - [ ] **Step 1: Update the tests first (they define the async contract)**
 
-In both dashboard test files: make every test callback `async`; change each `getDashboard(db, …)` / `getMemberFilterOptions(db)` / `getPostDetail(db, …)` / `getPostUrl(db, …)` / `getDateRangeBounds(db, …)` call to `await`; change DB setup to `const db = await openDb({ url: ':memory:' }); await migrate(db);` and seed inserts to `await db.prepare(...).run(...)`.
+In both dashboard test files: make every test callback `async`; change DB setup to `const { db, close } = await createTestDb();` and `await close();` (per Task 2b); change each `getDashboard(db, …)` / `getMemberFilterOptions(db)` / `getPostDetail(db, …)` / `getPostUrl(db, …)` / `getDateRangeBounds(db, …)` call to `await`; change seed inserts to `await db.prepare(...).run(...)`.
 
 - [ ] **Step 2: Run to confirm failure**
 
@@ -330,6 +409,8 @@ return await db.transaction(async (tx) => {
 
 Ensure `createMemberAndMapAlias` returns `Number(r.lastInsertRowid)` (BigInt → number). Remove all raw BEGIN/COMMIT/ROLLBACK.
 
+**C3 — thread `tx`, not `db`, into helpers inside a transaction.** These functions call a shared single-statement helper `mapAliasToMemberTx(db, …)` (`aliases.js:9`). Inside the `db.transaction(async (tx) => …)` body, every helper and statement MUST use `tx`: `await mapAliasToMemberTx(tx, …)`, `await tx.prepare(...).run(...)`. If any statement inside the transaction still uses the outer `db`, it runs OUTSIDE the transaction (atomicity broken) and will **block/deadlock** against the open write transaction. The helper needs no change — `tx` and `db` share the adapter interface; only the argument passed changes.
+
 - [ ] **Step 4: Run → PASS.**
 - [ ] **Step 5: Commit** `refactor: async alias identity ops with transaction helper`
 
@@ -346,13 +427,13 @@ Ensure `createMemberAndMapAlias` returns `Number(r.lastInsertRowid)` (BigInt →
 
 - [ ] **Step 1: Update tests to `await` + async setup.**
 - [ ] **Step 2: Run → FAIL.**
-- [ ] **Step 3: Convert** the three functions to async; port both transaction blocks to `db.transaction` (pattern from Task 5); `Number()` any `lastInsertRowid` that becomes a post/event id.
+- [ ] **Step 3: Convert** the three functions to async; port both transaction blocks (`otherLinkedIn.js:53, 109`) to `db.transaction` (pattern from Task 5); `Number()` any `lastInsertRowid` that becomes a post/event id. **C3:** inside each transaction, call the shared helpers from `ingest.js` (`insertSharingEvent`, `touchPostTimestamps`, `upsertPost`, etc.) and all statements with **`tx`**, never the outer `db`. Note `promoteOtherLinkedInItem` reads `result.changes` via `insertSharingEvent` (`otherLinkedIn.js:70`) — this works because the adapter exposes `changes` (C1); its `sharingEventInserted` flag drives the undo path (`:114`), so verify the promote/undo tests still pass.
 - [ ] **Step 4: Run → PASS.**
 - [ ] **Step 5: Commit** `refactor: async other-LinkedIn review ops`
 
 ---
 
-### Task 7: Convert `src/preview/previewCache.js` (6 sites)
+### Task 7: Convert `src/preview/previewCache.js` (3 sites)
 
 **Files:**
 - Modify: `src/preview/previewCache.js`
@@ -369,35 +450,35 @@ Ensure `createMemberAndMapAlias` returns `Number(r.lastInsertRowid)` (BigInt →
 
 ---
 
-### Task 8: Convert `src/ingest/ingest.js` + `src/db/backfillUnresolvedShortLinks.js` (30 + 6 sites, 2 transactions) — highest risk
+### Task 8: Convert `src/ingest/ingest.js` + `src/db/backfillUnresolvedShortLinks.js` (30 + 6 sites, **3 ingest transactions** + 1 backfill) — highest risk
 
 **Files:**
 - Modify: `src/ingest/ingest.js`
 - Modify: `src/db/backfillUnresolvedShortLinks.js`
-- Test: `test/ingest/ingest.test.js` (and any import-route test setup)
+- Test: `test/ingest/ingest.test.js`, `test/ingest/previewFetch.test.js`, `test/ingest/shortLink.test.js` (and any import-route test setup)
 
 **Interfaces:**
-- Produces: `async ingest(db, text, groupId, opts) → result` (same result shape: counts of posts/events created, review items, etc.). The best-effort preview fetch + short-link resolve still fire **after** the transaction commits (now via `await`, but failures must not fail the ingest — keep them in a `try/catch` that only logs).
+- Produces: `async ingest(db, text, groupId, opts) → result`. **Same result shape, and it MUST still return `previewFetchesSettled` and `shortLinkResolutionsSettled`** (promises the tests await for deterministic completion — `previewFetch.test.js`, `shortLink.test.js`). Best-effort preview/short-link work fires **after** the transaction commits; failures must not fail the ingest.
 - Produces: `async backfillUnresolvedShortLinks(db)`.
 
-- [ ] **Step 1: Update the ingest tests** to `await ingest(...)`, async DB setup, and `await` all result-verification queries. These tests assert dedup/attribution invariants (one post many events, overlapping re-imports don't duplicate) — they are the safety net for this file; do not weaken them.
+**C2 — `ingest.js` has THREE transactions, not one:** `ingest.js:69` (main write path), `ingest.js:322` (`mergeOrRekeyShortLinkPost`), and `ingest.js:355` (`reclassifyShortLinkPostAsOtherLinkedIn`). The latter two run in the post-commit short-link path (each its own standalone transaction). **All three** must be ported to `db.transaction`; leaving any as raw `db.exec('BEGIN')` silently disconnects its statements from the transaction.
+
+- [ ] **Step 1: Update the three ingest test files** to `await createTestDb()` / `await close()`, `await ingest(...)`, `await` all result-verification queries, and **keep awaiting `result.previewFetchesSettled` / `result.shortLinkResolutionsSettled`** where the tests already do (`previewFetch.test.js:55`, `shortLink.test.js`). These tests assert dedup/attribution invariants AND `newSharingEvents` counts (which depend on the C1 `.changes` fix) — they are the safety net; do not weaken them.
 
 - [ ] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Convert `backfillUnresolvedShortLinks.js`** first (ingest/migrate depend on it): make it `async`, port its BEGIN/COMMIT/ROLLBACK (per-item transaction) to `db.transaction` per item, `await` all statements, `Number()` ids.
+- [ ] **Step 3: Convert `backfillUnresolvedShortLinks.js`** first (migrate depends on it): make it `async`; port its per-item BEGIN/COMMIT/ROLLBACK (`:34`) to `await db.transaction(async (tx) => …)` per item; **thread `tx` into every statement and helper inside** (C3); `await` all; `Number()` ids.
 
-- [ ] **Step 4: Convert `ingest.js`.** Make `ingest` async. Wrap the main write path (everything between the current `db.exec('BEGIN')` and `db.exec('COMMIT')`) in `await db.transaction(async (tx) => { … })`, awaiting every statement on `tx` and `Number()`-ing every `lastInsertRowid` used as a post id / event id / member id. The post-commit best-effort work (preview fetch, short-link resolve) stays **outside** the transaction, after it returns, wrapped so a failure only logs:
+- [ ] **Step 4: Convert `ingest.js` — all three transactions.** Make `ingest` async and every helper it awaits async (`upsertPost`, `resolveMember`, `insertSharingEvent`, `touchPostTimestamps`, `ensureUnknownSenderReviewItem`, `ensureOtherLinkedInReviewItem`, `recordImportBatch`).
+  - **Main transaction (`:69`):** wrap the write path in `await db.transaction(async (tx) => { … })`. **C3: pass `tx` into every helper call inside** — `await upsertPost(tx, …)`, `await insertSharingEvent(tx, …)`, `await touchPostTimestamps(tx, …)`, etc. (currently `ingest.js:101,113,116,120,130,135` pass `db`). A helper left on the outer `db` runs outside the transaction and will deadlock against it.
+  - **`mergeOrRekeyShortLinkPost` (`:322`)** and **`reclassifyShortLinkPostAsOtherLinkedIn` (`:355`):** port each to its own `await db.transaction(...)`, `tx`-threaded. These depend on FK cascade deletes (`:339, :367`) — confirmed working on the embedded path by the spike.
+  - `Number()` every `lastInsertRowid` used as an id (already done at `:214, :404`).
+  - `insertSharingEvent` returns `result.changes > 0` (`:385`) — now correct because the adapter exposes `changes` (C1). Do not change the call site.
+  - **Post-commit best-effort (M5):** keep the real structure — two `Promise.all` passes over `newPostFetchTargets` and `shortLinkResolveTargets` (`ingest.js:149-184`), returned as `previewFetchesSettled` / `shortLinkResolutionsSettled`. `await` the now-async `cacheFetchedPreview` / `markPreviewUnavailable` inside `applyShortLinkResolution` (`:289, :291`). Do NOT replace this with a simple loop — the tests await these two promises.
 
-```javascript
-// after the transaction commits:
-for (const post of newPosts) {
-  try { await maybeFetchPreview(db, post, opts.previewFetcher); } catch (err) { /* best-effort, log */ }
-}
-```
+- [ ] **Step 5: Run → PASS.** `node --test test/ingest/ingest.test.js test/ingest/previewFetch.test.js test/ingest/shortLink.test.js`
 
-- [ ] **Step 5: Run → PASS.** `node --test test/ingest/ingest.test.js`
-
-- [ ] **Step 6: Commit** `refactor: async ingest pipeline + short-link backfill with transactions`
+- [ ] **Step 6: Commit** `refactor: async ingest pipeline (3 txns, tx-threaded) + short-link backfill`
 
 ---
 
@@ -411,12 +492,14 @@ for (const post of newPosts) {
 - Consumes: every now-async query/command function from Tasks 3–8.
 - Produces: unchanged routes and responses; handlers are now `async (req, res) => { … }` and `await` each data call.
 
-- [ ] **Step 1: Update route-test setup** across `test/http/*` to `const db = await openDb({ url: ':memory:' }); await migrate(db);` and `await` any direct `getMembers`/`ingest`/etc. calls used to arrange state. Supertest assertions on responses stay the same.
+- [ ] **Step 1: Update route-test setup** across `test/http/*` to `const { db, close } = await createTestDb(); … await close();` (per Task 2b) and `await` any direct `getMembers`/`ingest`/etc. calls used to arrange state. (The two string-`:memory:` files are already handled in Task 2b.) Supertest assertions on responses stay the same.
 
 - [ ] **Step 2: Run the HTTP suite → FAIL** (handlers not yet awaiting).
 Run: `node --test test/http/`
 
-- [ ] **Step 3: Convert `app.js`.** For each route that calls a query/command: make the handler `async` and `await` the call (`getDashboard`, `getMemberFilterOptions`, `getDateRangeBounds`, `getPostDetail`, `getPostUrl`, `getMembers`, `getUnknownSenderReviewItems`, `getOtherLinkedInReviewItems`, `ingest`, `mapAliasToMember`, `createMemberAndMapAlias`, `undoAliasMapping`, `dismiss/promote/undoOtherLinkedInItem`, `setPreviewOverride`). Wrap each handler body in `try { … } catch (err) { next(err) }` or an async-error wrapper so a rejected promise returns 500 rather than hanging. The **view calls stay synchronous** (`renderDashboard(data, …)` etc.) — only the data fetch before them is awaited.
+- [ ] **Step 3: Convert `app.js`.** For each route that calls a query/command: make the handler `async` and `await` the call (`getDashboard`, `getMemberFilterOptions`, `getDateRangeBounds`, `getPostDetail`, `getPostUrl`, `getMembers`, `getUnknownSenderReviewItems`, `getOtherLinkedInReviewItems`, `ingest`, `mapAliasToMember`, `createMemberAndMapAlias`, `undoAliasMapping`, `dismiss/promote/undoOtherLinkedInItem`, `setPreviewOverride`). Wrap each handler body in `try { … } catch (err) { next(err) }` so a rejected promise returns 500 rather than hanging (Express 4 does NOT auto-catch async rejections, and `createApp` has no error middleware today — the default handler returns 500, which is the intended behavior). The **view calls stay synchronous** (`renderDashboard(data, …)` etc.) — only the data fetch before them is awaited.
+
+  **Watch the `.find()` chains:** sites like `getMembers(db).find(...)` (`app.js:107, 169, 389, 401, 441, 451`) become `(await getMembers(db)).find(...)` — the parentheses matter (`await getMembers(db).find(...)` awaits the wrong thing).
 
 - [ ] **Step 4: Run the HTTP suite → PASS.**
 
@@ -428,9 +511,9 @@ Run: `node --test test/http/`
 
 **Files:**
 - Modify: `src/server.js`
-- Delete: `src/ingest/folderWatch.js`, `src/db/backup.js`
-- Delete: their tests (`test/ingest/folderWatch*.test.js`, `test/db/backup*.test.js` if present)
-- Modify: any imports of the deleted modules.
+- Delete: `src/ingest/folderWatch.js`, `src/db/backup.js`, **`src/ingest/watchedFolders.js`** (M4 — only folder-watch uses it; orphaned once folder-watch is gone)
+- Delete: their tests (`test/ingest/folderWatch*.test.js`, `test/db/backup*.test.js`, **`test/ingest/watchedFolders.test.js`** if present)
+- Modify: any imports of the deleted modules (search for `folderWatch`, `watchedFolders`, `loadWatchedFolders`, `backup`).
 
 **Interfaces:**
 - Produces: a server that `await openDb(resolveDbConfig())`, `await migrate(db)`, builds the app, and `app.listen(PORT)`. No background schedulers.
@@ -454,7 +537,7 @@ app.listen(PORT, () => console.log(`Postboard listening on http://localhost:${PO
 
 (Top-level `await` is valid in an ESM entrypoint. `createApp`'s `adminToken` still comes from `options.adminToken ?? process.env.ADMIN_TOKEN`.)
 
-- [ ] **Step 2: Delete** `src/ingest/folderWatch.js`, `src/db/backup.js`, and their tests. Remove `loadWatchedFolders`/`startFolderWatchPoller`/`startNightlyBackupScheduler` imports anywhere (search the repo).
+- [ ] **Step 2: Delete** `src/ingest/folderWatch.js`, `src/db/backup.js`, `src/ingest/watchedFolders.js`, and their tests. Remove `loadWatchedFolders`/`startFolderWatchPoller`/`startNightlyBackupScheduler` imports anywhere (search the repo). (The `watched_files` table from migration `0002` stays in the ledger — a harmless dead table; do not write a down-migration.)
 
 - [ ] **Step 3: Run the FULL suite** `node --test` — expected PASS (now fewer tests after the deletions, but zero failures). Record the new count.
 
@@ -550,4 +633,8 @@ services:
 
 **Type consistency:** Adapter shape (`prepare().get/all/run`, `transaction(fn)`, `executeMultiple`, `exec`, `close`) is defined in Task 1 and used identically in Tasks 2–10. `lastInsertRowid` is consistently `Number()`-wrapped wherever an id enters app logic. `resolveDbConfig`/`openDb` signatures match between definition (Task 1) and use (Tasks 2, 10, 11).
 
-**Known open risk to flag at execution:** `@libsql/client` `:memory:` uses a fresh in-memory DB per client; tests that open multiple connections expecting shared state must use ONE `openDb` per test (the existing tests already pass a single `db` into the seam, so this holds). If any test needs two connections to the same memory DB, switch that test to `file::memory:?cache=shared`.
+**Audit folded in (2026-10-12):** C1 (adapter exposes `changes`), C2 (3 ingest transactions), C3 (`tx` threaded into helpers), M1 (async `createTestDb`, Task 2b), M2/M3 (string-`:memory:` tests + WAL assertion), M4 (`watchedFolders.js` deleted), M5 (real post-commit `*Settled` shape). The **nested-transaction risk was investigated and is unfounded** — no transaction-wrapped function calls another.
+
+**Verified-vs-unverified:** The six libSQL API assumptions were confirmed empirically (see "Verified facts" above) on the embedded `:memory:` path. The ONE residual unknown is **remote-Turso foreign-key enforcement** — the spike proved FK cascades on embedded libSQL, but production is `libsql://`. Task 14 Step 2 must confirm cascade deletes against a real Turso DB before relying on them; if Turso doesn't honor the per-connection `PRAGMA foreign_keys`, the two short-link transactions (`ingest.js:339, 367`) that depend on cascade will need explicit child deletes.
+
+**Known test-isolation note:** `:memory:` is a fresh DB per `createClient`; `createTestDb` opens one per test and passes a single `db` through the seam, so isolation holds. If any test ever needs two handles to the same in-memory DB, use `file::memory:?cache=shared`.
