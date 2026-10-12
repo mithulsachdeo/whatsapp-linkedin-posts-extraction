@@ -21,26 +21,25 @@ import {
 } from '../ingest/ingest.js';
 
 /**
- * @param {import('node:sqlite').DatabaseSync} db
- * @returns {number} count of UNRESOLVED_SHORT_LINK items converted
+ * @param {import('../db/connection.js').Adapter} db
+ * @returns {Promise<number>} count of UNRESOLVED_SHORT_LINK items converted
  */
-export function backfillUnresolvedShortLinks(db) {
-  const items = db.prepare("SELECT id, payload FROM review_items WHERE kind = 'UNRESOLVED_SHORT_LINK'").all();
+export async function backfillUnresolvedShortLinks(db) {
+  const items = await db.prepare("SELECT id, payload FROM review_items WHERE kind = 'UNRESOLVED_SHORT_LINK'").all();
 
   for (const item of items) {
     const payload = JSON.parse(item.payload);
     const canonicalUrl = canonicalizeShortLinkUrl(payload.url) ?? payload.url;
 
-    db.exec('BEGIN');
-    try {
-      const { id: postId } = upsertPost(db, canonicalUrl);
+    await db.transaction(async (tx) => {
+      const { id: postId } = await upsertPost(tx, canonicalUrl);
 
-      const memberId = resolveMember(db, payload.rawSender);
+      const memberId = await resolveMember(tx, payload.rawSender);
       if (memberId === null) {
-        ensureUnknownSenderReviewItem(db, payload.rawSender);
+        await ensureUnknownSenderReviewItem(tx, payload.rawSender);
       }
 
-      const inserted = insertSharingEvent(db, {
+      const inserted = await insertSharingEvent(tx, {
         postId,
         groupId: payload.groupId,
         rawSender: payload.rawSender,
@@ -48,14 +47,10 @@ export function backfillUnresolvedShortLinks(db) {
         timestamp: payload.timestamp,
         note: payload.note ?? null,
       });
-      if (inserted) touchPostTimestamps(db, postId, payload.timestamp);
+      if (inserted) await touchPostTimestamps(tx, postId, payload.timestamp);
 
-      db.prepare('DELETE FROM review_items WHERE id = ?').run(item.id);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+      await tx.prepare('DELETE FROM review_items WHERE id = ?').run(item.id);
+    });
   }
 
   return items.length;

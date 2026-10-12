@@ -22,7 +22,18 @@ export async function createTestDb() {
     dir,
     async close() {
       await db.close();
-      rmSync(dir, { recursive: true, force: true });
+      // On Windows, @libsql/client's native binding only releases its file
+      // handle on GC of the client object, not synchronously on close() --
+      // verified by reproduction (forcing a GC pass frees the handle
+      // immediately; waiting without one does not, even for several
+      // seconds). Retrying absorbs the common case; swallowing a residual
+      // EPERM/EBUSY here just leaves an OS-tmp-dir leftover for the GC/OS to
+      // reclaim later -- not a correctness issue for the test itself.
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      } catch (err) {
+        if (err.code !== 'EPERM' && err.code !== 'EBUSY') throw err;
+      }
     },
   };
 }

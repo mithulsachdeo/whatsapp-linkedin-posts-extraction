@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { createTestDb } from '../helpers/testDb.js';
 import { migrate } from '../../src/db/migrate.js';
 import { backfillUnresolvedShortLinks } from '../../src/db/backfillUnresolvedShortLinks.js';
-import { getDashboard } from '../../src/query/dashboard.js';
 
 test('migrate creates the core schema', async () => {
   const { db, close } = await createTestDb();
@@ -58,13 +57,18 @@ test('backfillUnresolvedShortLinks converts a seeded UNRESOLVED_SHORT_LINK item 
       })
     );
 
-    const converted = backfillUnresolvedShortLinks(db);
+    const converted = await backfillUnresolvedShortLinks(db);
     assert.equal(converted, 1);
 
-    const dashboard = getDashboard(db);
-    assert.equal(dashboard.posts.length, 1);
-    assert.equal(dashboard.posts[0].url, 'https://lnkd.in/abc123');
-    assert.equal(dashboard.posts[0].shareCount, 1);
+    // Asserted directly against posts/sharing_events, not via getDashboard
+    // (src/query/dashboard.js is still sync -- its async conversion is a
+    // separate ticket, #6 -- so this seam test can't route through it yet).
+    const posts = await db.prepare('SELECT * FROM posts').all();
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].canonical_url, 'https://lnkd.in/abc123');
+
+    const events = await db.prepare('SELECT * FROM sharing_events WHERE post_id = ?').all(posts[0].id);
+    assert.equal(events.length, 1);
 
     const remaining = await db.prepare("SELECT * FROM review_items WHERE kind = 'UNRESOLVED_SHORT_LINK'").all();
     assert.equal(remaining.length, 0);
@@ -86,12 +90,12 @@ test('backfillUnresolvedShortLinks is idempotent: a second run finds nothing lef
       })
     );
 
-    backfillUnresolvedShortLinks(db);
-    const secondRun = backfillUnresolvedShortLinks(db);
+    await backfillUnresolvedShortLinks(db);
+    const secondRun = await backfillUnresolvedShortLinks(db);
     assert.equal(secondRun, 0);
 
-    const dashboard = getDashboard(db);
-    assert.equal(dashboard.posts.length, 1); // not duplicated
+    const posts = await db.prepare('SELECT * FROM posts').all();
+    assert.equal(posts.length, 1); // not duplicated
   } finally {
     await close();
   }

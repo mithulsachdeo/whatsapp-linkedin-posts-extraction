@@ -242,6 +242,8 @@ git commit -m "feat: async libSQL DB adapter replacing node:sqlite connection"
 - Consumes: `openDb` adapter from Task 1.
 - Produces: `async function migrate(db): Promise<void>` — idempotent; applies pending SQL migration files in order inside a transaction and records the version.
 
+> **Sequencing correction (found during execution):** `migrate()` invokes `backfillUnresolvedShortLinks(db)` at runtime on a fresh DB, which in turn calls 5 single-statement helpers in `ingest.js` (`upsertPost`, `resolveMember`, `ensureUnknownSenderReviewItem`, `insertSharingEvent`, `touchPostTimestamps`). So `migrate` cannot run — and `migrate.test.js` cannot go green — until backfill **and those 5 helpers** are async. Convert them **here, with Task 2** (not deferred to Task 8). Task 8 then converts only the *rest* of `ingest.js` (the `ingest()` orchestration + the three transactions) and calls the already-async helpers with `await`.
+
 - [ ] **Step 1: Convert `migrate` to async**
 
 In `src/db/migrate.js`:

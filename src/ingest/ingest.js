@@ -206,23 +206,23 @@ export function ingest(db, rawExportText, groupId, options = {}) {
 // review workflow's "promote to post" action (src/review/otherLinkedIn.js)
 // can reuse the exact same upsert/attribution path ingestion uses, rather
 // than duplicating it.
-export function upsertPost(db, canonicalUrl) {
-  const existing = db.prepare('SELECT id FROM posts WHERE canonical_url = ?').get(canonicalUrl);
+export async function upsertPost(db, canonicalUrl) {
+  const existing = await db.prepare('SELECT id FROM posts WHERE canonical_url = ?').get(canonicalUrl);
   if (existing) return { id: existing.id, isNew: false };
 
-  const result = db.prepare('INSERT INTO posts (canonical_url) VALUES (?)').run(canonicalUrl);
+  const result = await db.prepare('INSERT INTO posts (canonical_url) VALUES (?)').run(canonicalUrl);
   return { id: Number(result.lastInsertRowid), isNew: true };
 }
 
-export function resolveMember(db, rawSender) {
-  const row = db.prepare('SELECT member_id FROM aliases WHERE raw_value = ?').get(rawSender);
+export async function resolveMember(db, rawSender) {
+  const row = await db.prepare('SELECT member_id FROM aliases WHERE raw_value = ?').get(rawSender);
   return row ? row.member_id : null;
 }
 
 // No fuzzy auto-merge (spec: "an unrecognized sender links to no member").
 // One OPEN review item per unresolved raw sender string, not one per event.
-export function ensureUnknownSenderReviewItem(db, rawSender) {
-  const existing = db
+export async function ensureUnknownSenderReviewItem(db, rawSender) {
+  const existing = await db
     .prepare(
       `SELECT id FROM review_items
        WHERE kind = 'UNKNOWN_SENDER' AND status = 'OPEN' AND json_extract(payload, '$.rawSender') = ?`
@@ -230,7 +230,7 @@ export function ensureUnknownSenderReviewItem(db, rawSender) {
     .get(rawSender);
   if (existing) return;
 
-  db.prepare("INSERT INTO review_items (kind, payload) VALUES ('UNKNOWN_SENDER', ?)").run(
+  await db.prepare("INSERT INTO review_items (kind, payload) VALUES ('UNKNOWN_SENDER', ?)").run(
     JSON.stringify({ rawSender })
   );
 }
@@ -375,8 +375,8 @@ export function reclassifyShortLinkPostAsOtherLinkedIn(db, interimPostId, resolv
 // Natural key (group_id, message_timestamp, raw_sender, post_id) is a DB
 // UNIQUE constraint; INSERT OR IGNORE makes re-importing the same or an
 // overlapping export a zero-new-rows no-op.
-export function insertSharingEvent(db, { postId, groupId, rawSender, memberId, timestamp, note }) {
-  const result = db
+export async function insertSharingEvent(db, { postId, groupId, rawSender, memberId, timestamp, note }) {
+  const result = await db
     .prepare(
       `INSERT OR IGNORE INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp, note)
        VALUES (?, ?, ?, ?, ?, ?)`
@@ -385,8 +385,8 @@ export function insertSharingEvent(db, { postId, groupId, rawSender, memberId, t
   return result.changes > 0;
 }
 
-export function touchPostTimestamps(db, postId, timestamp) {
-  db.prepare(
+export async function touchPostTimestamps(db, postId, timestamp) {
+  await db.prepare(
     `UPDATE posts SET
        first_shared_at = CASE WHEN first_shared_at IS NULL OR ? < first_shared_at THEN ? ELSE first_shared_at END,
        last_shared_at = CASE WHEN last_shared_at IS NULL OR ? > last_shared_at THEN ? ELSE last_shared_at END
