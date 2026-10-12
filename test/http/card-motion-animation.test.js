@@ -5,16 +5,16 @@ import { createApp } from '../../src/http/app.js';
 import { openDb } from '../../src/db/connection.js';
 import { migrate } from '../../src/db/migrate.js';
 
-function buildApp() {
-  const db = openDb(':memory:');
-  migrate(db);
+async function buildApp() {
+  const db = await openDb({ url: ':memory:' });
+  await migrate(db);
   const app = createApp(db, { adminToken: 'test-admin' });
   return { app, db, close: () => db.close() };
 }
 
-function seedPosts(db) {
-  const member = db.prepare('INSERT INTO members (display_name) VALUES (?)').run('Vikram Sen');
-  const post1 = db
+async function seedPosts(db) {
+  const member = await db.prepare('INSERT INTO members (display_name) VALUES (?)').run('Vikram Sen');
+  const post1 = await db
     .prepare(
       `INSERT INTO posts (canonical_url, preview_author, preview_excerpt, first_shared_at, last_shared_at) VALUES (?, ?, ?, ?, ?)`
     )
@@ -25,11 +25,11 @@ function seedPosts(db) {
       '2026-10-01T10:00:00Z',
       '2026-10-01T10:00:00Z'
     );
-  db.prepare(
+  await db.prepare(
     `INSERT INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp) VALUES (?, 'group-a', 'Vikram Sen', ?, '2026-10-01T10:00:00Z')`
-  ).run(post1.lastInsertRowid, Number(member.lastInsertRowid));
+  ).run(Number(post1.lastInsertRowid), Number(member.lastInsertRowid));
 
-  const post2 = db
+  const post2 = await db
     .prepare(
       `INSERT INTO posts (canonical_url, preview_author, preview_excerpt, first_shared_at, last_shared_at) VALUES (?, ?, ?, ?, ?)`
     )
@@ -40,15 +40,15 @@ function seedPosts(db) {
       '2026-10-02T10:00:00Z',
       '2026-10-02T10:00:00Z'
     );
-  db.prepare(
+  await db.prepare(
     `INSERT INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp) VALUES (?, 'group-a', 'Vikram Sen', ?, '2026-10-02T10:00:00Z')`
-  ).run(post2.lastInsertRowid, Number(member.lastInsertRowid));
+  ).run(Number(post2.lastInsertRowid), Number(member.lastInsertRowid));
 }
 
 test('Columns layout applies anim-card-block and staggered index to cards with zero extra elements', async () => {
-  const { app, db, close } = buildApp();
+  const { app, db, close } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/?density=cards');
     assert.equal(res.status, 200);
 
@@ -62,14 +62,14 @@ test('Columns layout applies anim-card-block and staggered index to cards with z
     // Orchestrator script is included
     assert.match(res.text, /<script src="\/assets\/card-convergence-blast\.js" defer><\/script>/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('Index layout applies anim-card-block and staggered index to rows with zero extra elements', async () => {
-  const { app, db, close } = buildApp();
+  const { app, db, close } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/?density=rows');
     assert.equal(res.status, 200);
 
@@ -83,12 +83,12 @@ test('Index layout applies anim-card-block and staggered index to rows with zero
     // Orchestrator script is included
     assert.match(res.text, /<script src="\/assets\/card-convergence-blast\.js" defer><\/script>/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('motion.css defines 3D card convergence and blast keyframes, central circle styling, and reduced-motion override', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const res = await request(app).get('/assets/tokens/motion.css');
     assert.equal(res.status, 200);
@@ -110,12 +110,12 @@ test('motion.css defines 3D card convergence and blast keyframes, central circle
     assert.doesNotMatch(res.text, /card-converge[^{]*\{[^}]*rotateY/);
     assert.match(res.text, /prefers-reduced-motion:reduce/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('/assets/card-convergence-blast.js is served with HTTP 200 and application/javascript', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const res = await request(app).get('/assets/card-convergence-blast.js');
     assert.equal(res.status, 200);
@@ -124,6 +124,6 @@ test('/assets/card-convergence-blast.js is served with HTTP 200 and application/
     assert.match(res.text, /convergence-shockwave/);
     assert.match(res.text, /getBoundingClientRect/);
   } finally {
-    close();
+    await close();
   }
 });
