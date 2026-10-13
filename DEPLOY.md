@@ -1,6 +1,13 @@
 # Deploying Postboard ("The Rethinkers' Times")
 
-## Why Render free + Turso
+> **Recommended (no credit card): Vercel Hobby + Turso.** Render's free plan now
+> requires a card for verification; **Vercel Hobby and Turso's free tier do not.**
+> The Turso migration made the app serverless-ready (remote DB, no background
+> jobs), so it runs on Vercel via `vercel.json` + `api/index.js`. See
+> **Deploy on Vercel** below. The Render steps remain as an alternative if you
+> ever add a card.
+
+## Why serverless (Vercel) / Render + Turso
 
 Postboard's database is [Turso](https://turso.tech) (hosted libSQL) — a managed,
 remote SQLite-compatible database reached over the network, not a local file.
@@ -39,7 +46,37 @@ turso db tokens create postboard
 Keep the URL and token somewhere safe (password manager) — you'll paste them
 into Render next. The token is a secret; never commit it.
 
-## One-time deploy on Render
+## Deploy on Vercel (recommended — no credit card)
+
+Vercel's Hobby tier needs no card. The repo already has `vercel.json` +
+`api/index.js` (a thin serverless entry that reuses the same `createApp()` the
+local server uses).
+
+1. Provision Turso first (section above) → `DATABASE_URL` + `DATABASE_AUTH_TOKEN`.
+2. Go to https://vercel.com and sign up (GitHub login is easiest — no card).
+3. **Add New → Project**, import `whatsapp-linkedin-posts-extraction`.
+   - Set the deploy branch to **`feat/turso-migration`** (Project Settings →
+     Git → Production Branch) — that's where the Turso-migrated code lives.
+4. **Environment Variables** (Production scope) — add all three:
+   - `DATABASE_URL` = your `libsql://…` URL
+   - `DATABASE_AUTH_TOKEN` = your Turso token
+   - `ADMIN_TOKEN` = a new long random string (your admin password)
+5. **Deploy.** The schema is created + migrated in Turso on the first request.
+6. **Verify:** open the deployment URL, confirm "No posts yet", log in via
+   **Admin** with your `ADMIN_TOKEN`, import a small export, refresh to confirm
+   it persisted.
+
+### Vercel caveats
+- **Import size:** Vercel caps request bodies at ~4.5 MB. WhatsApp **text**
+  exports are normally well under that; a very large export would be rejected.
+  (A chunked-import path can be added if this ever bites.)
+- **Function timeout:** Hobby functions have a ~10 s limit. A big first import
+  that triggers many live preview fetches could approach it; previews mostly
+  fail fast, so normal imports are fine.
+- **Cold starts:** the first request after idle pays the DB-connect + migrate
+  cost once per warm instance (a second or two), then it's warm.
+
+## Deploy on Render (alternative — requires a credit card)
 
 1. **Create a Render account** at https://render.com and connect your GitHub
    so it can read `github.com/mithulsachdeo/whatsapp-linkedin-posts-extraction`

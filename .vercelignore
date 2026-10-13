@@ -1,0 +1,14 @@
+# Keep the serverless bundle lean — none of this is needed at runtime.
+test/
+docs/
+photos/
+data/
+*.sqlite
+*.sqlite-*
+handoff.md
+handoff_antigravity
+handoff_antigravity.md
+verify-turso-fk.mjs
+render.yaml
+DEPLOY.md
+.env.example
