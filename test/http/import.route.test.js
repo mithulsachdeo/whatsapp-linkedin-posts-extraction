@@ -8,24 +8,24 @@ import { loginAsAdmin } from '../helpers/adminSession.js';
 
 const ADMIN_TOKEN = 'test-admin-token';
 
-function buildApp() {
-  const { db, close } = createTestDb();
+async function buildApp() {
+  const { db, close } = await createTestDb();
   const app = createApp(db, { adminToken: ADMIN_TOKEN });
   return { app, close };
 }
 
 test('POST /import is unauthorized without a logged-in admin session', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const res = await request(app).post('/import');
     assert.equal(res.status, 401);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('POST /import with a .txt export shows the traceable stats readout', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const agent = await loginAsAdmin(app, ADMIN_TOKEN);
     const text = '30/09/26, 10:15 - Priya Sharma: https://www.linkedin.com/posts/someone_activity-1-abcd';
@@ -44,12 +44,12 @@ test('POST /import with a .txt export shows the traceable stats readout', async 
     assert.match(dashboard.text, /Last updated/);
     assert.doesNotMatch(dashboard.text, /Last updated: never/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('POST /import without a file shows an error and does not crash', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const agent = await loginAsAdmin(app, ADMIN_TOKEN);
     const res = await agent.post('/import').field('groupId', 'product-chai');
@@ -57,12 +57,12 @@ test('POST /import without a file shows an error and does not crash', async () =
     assert.equal(res.status, 200);
     assert.match(res.text, /Choose a .txt or .zip chat export/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('POST /import without a group shows an error', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const agent = await loginAsAdmin(app, ADMIN_TOKEN);
     const res = await agent
@@ -72,12 +72,12 @@ test('POST /import without a group shows an error', async () => {
     assert.equal(res.status, 200);
     assert.match(res.text, /Choose which group/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('re-uploading a byte-identical file surfaces the duplicate warning', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const agent = await loginAsAdmin(app, ADMIN_TOKEN);
     const text = '30/09/26, 10:15 - Priya Sharma: https://www.linkedin.com/posts/someone_activity-1-abcd';
@@ -93,6 +93,6 @@ test('re-uploading a byte-identical file surfaces the duplicate warning', async 
 
     assert.match(res.text, /byte-identical/);
   } finally {
-    close();
+    await close();
   }
 });

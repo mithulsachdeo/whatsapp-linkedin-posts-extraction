@@ -11,25 +11,25 @@ import { loginAsAdmin } from '../helpers/adminSession.js';
 
 const ADMIN_TOKEN = 'test-admin-token';
 
-function buildApp() {
-  const { db, close } = createTestDb();
+async function buildApp() {
+  const { db, close } = await createTestDb();
   const app = createApp(db, { adminToken: ADMIN_TOKEN });
   return { app, close, db };
 }
 
-function seedOnePost(db) {
-  const post = db
+async function seedOnePost(db) {
+  const post = await db
     .prepare(`INSERT INTO posts (canonical_url, preview_author) VALUES (?, ?)`)
     .run('https://www.linkedin.com/posts/gutter-ads-test', 'Gutter Author');
-  db.prepare(
+  await db.prepare(
     `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
-  ).run(post.lastInsertRowid);
+  ).run(Number(post.lastInsertRowid));
 }
 
 test('GET / renders two gutters, each with 3 photo slots, when gutters_hidden is not set', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedOnePost(db);
+    await seedOnePost(db);
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
 
@@ -43,28 +43,28 @@ test('GET / renders two gutters, each with 3 photo slots, when gutters_hidden is
     const imgMatches = res.text.match(/\/assets\/gutter-photos\/[^"]+\.webp/g) || [];
     assert.equal(imgMatches.length, 6);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET / renders no gutter markup when the gutters_hidden cookie is set', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedOnePost(db);
+    await seedOnePost(db);
     const res = await request(app).get('/').set('Cookie', 'gutters_hidden=1');
     assert.equal(res.status, 200);
     assert.doesNotMatch(res.text, /gutter-ads-root/);
     assert.doesNotMatch(res.text, /gutter-left/);
     assert.doesNotMatch(res.text, /gutter-right/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('gutter markup is absent on /import, /review and /login', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedOnePost(db);
+    await seedOnePost(db);
     const agent = await loginAsAdmin(app, ADMIN_TOKEN);
 
     const importRes = await agent.get('/import');
@@ -76,32 +76,32 @@ test('gutter markup is absent on /import, /review and /login', async () => {
     const loginRes = await request(app).get('/login');
     assert.doesNotMatch(loginRes.text, /gutter-ads-root/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('gutter markup is absent on /posts/:id', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    const post = db
+    const post = await db
       .prepare(`INSERT INTO posts (canonical_url, preview_author) VALUES (?, ?)`)
       .run('https://www.linkedin.com/posts/gutter-ads-detail', 'Detail Author');
-    db.prepare(
+    await db.prepare(
       `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
-    ).run(post.lastInsertRowid);
+    ).run(Number(post.lastInsertRowid));
 
-    const res = await request(app).get(`/posts/${post.lastInsertRowid}`);
+    const res = await request(app).get(`/posts/${Number(post.lastInsertRowid)}`);
     assert.equal(res.status, 200);
     assert.doesNotMatch(res.text, /gutter-ads-root/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET / gutter close button has an accessible label and photos are decorative (alt="")', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedOnePost(db);
+    await seedOnePost(db);
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
 
@@ -110,7 +110,7 @@ test('GET / gutter close button has an accessible label and photos are decorativ
 
     assert.match(res.text, /<img src="\/assets\/gutter-photos\/[^"]+\.webp" alt="" /);
   } finally {
-    close();
+    await close();
   }
 });
 

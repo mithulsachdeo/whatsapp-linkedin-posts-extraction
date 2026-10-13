@@ -9,30 +9,30 @@ import { loginAsAdmin } from '../helpers/adminSession.js';
 
 const ADMIN_TOKEN = 'test-admin-token';
 
-function buildApp() {
-  const { db, close } = createTestDb();
+async function buildApp() {
+  const { db, close } = await createTestDb();
   const app = createApp(db, { adminToken: ADMIN_TOKEN });
   return { app, db, close };
 }
 
 test('POST /posts/:id/preview is unauthorized without a logged-in admin session', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const res = await request(app).post('/posts/1/preview').type('form').send({ author: 'x' });
     assert.equal(res.status, 401);
   } finally {
-    close();
+    await close();
   }
 });
 
 test("POST /posts/:id/preview lets the admin override a post's preview, which then shows on the dashboard", async () => {
-  const { app, db, close } = buildApp();
+  const { app, db, close } = await buildApp();
   try {
-    const inserted = db
+    const inserted = await db
       .prepare('INSERT INTO posts (canonical_url) VALUES (?)')
       .run('https://www.linkedin.com/posts/someone_activity-1-abcd');
     const postId = Number(inserted.lastInsertRowid);
-    db.prepare(
+    await db.prepare(
       `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp)
        VALUES (?, 'group-a', 'Priya Sharma', '2026-09-30T10:15:00.000Z')`
     ).run(postId);
@@ -46,7 +46,7 @@ test("POST /posts/:id/preview lets the admin override a post's preview, which th
     assert.equal(res.status, 302);
     assert.equal(res.headers.location, '/');
 
-    const row = db.prepare('SELECT preview_edited FROM posts WHERE id = ?').get(postId);
+    const row = await db.prepare('SELECT preview_edited FROM posts WHERE id = ?').get(postId);
     assert.equal(row.preview_edited, 1);
 
     const dashboard = await request(app).get('/');
@@ -59,6 +59,6 @@ test("POST /posts/:id/preview lets the admin override a post's preview, which th
     const detail = await request(app).get(`/posts/${postId}`);
     assert.match(detail.text, /PM @ Acme/);
   } finally {
-    close();
+    await close();
   }
 });

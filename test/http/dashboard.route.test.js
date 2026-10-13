@@ -8,14 +8,14 @@ import { loginAsAdmin } from '../helpers/adminSession.js';
 
 const ADMIN_TOKEN = 'test-admin-token';
 
-function buildApp() {
-  const { db, close } = createTestDb();
+async function buildApp() {
+  const { db, close } = await createTestDb();
   const app = createApp(db, { adminToken: ADMIN_TOKEN });
   return { app, close, db };
 }
 
 test('GET / renders the no-posts-yet empty state for an anonymous visitor', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
@@ -23,12 +23,12 @@ test('GET / renders the no-posts-yet empty state for an anonymous visitor', asyn
     assert.match(res.text, /Last updated: never/);
     assert.doesNotMatch(res.text, /Import a chat export/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET / shows admin-flavoured empty-state copy and nav for a logged-in admin', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const agent = await loginAsAdmin(app, ADMIN_TOKEN);
     const res = await agent.get('/');
@@ -37,58 +37,58 @@ test('GET / shows admin-flavoured empty-state copy and nav for a logged-in admin
     assert.match(res.text, />Review</);
     assert.match(res.text, /Import a chat export/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /import redirects an anonymous visitor to /login', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const res = await request(app).get('/import');
     assert.equal(res.status, 302);
     assert.equal(res.headers.location, '/login?next=%2Fimport');
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /import succeeds for a logged-in admin', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const agent = await loginAsAdmin(app, ADMIN_TOKEN);
     const res = await agent.get('/import');
     assert.equal(res.status, 200);
     assert.match(res.text, /Import a chat export/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /review redirects an anonymous visitor to /login', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const res = await request(app).get('/review');
     assert.equal(res.status, 302);
     assert.equal(res.headers.location, '/login?next=%2Freview');
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /review succeeds for a logged-in admin', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const agent = await loginAsAdmin(app, ADMIN_TOKEN);
     const res = await agent.get('/review');
     assert.equal(res.status, 200);
     assert.match(res.text, /Review queue/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('the design-system stylesheet is served for the layout to link against', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const res = await request(app).get('/assets/styles.css');
     assert.equal(res.status, 200);
@@ -100,13 +100,13 @@ test('the design-system stylesheet is served for the layout to link against', as
     assert.equal(colors.status, 200);
     assert.match(colors.text, /--color-accent/);
   } finally {
-    close();
+    await close();
   }
 });
 
-function seedPosts(db) {
-  const member = db.prepare('INSERT INTO members (display_name) VALUES (?)').run('Ananya Rao');
-  const olderPost = db
+async function seedPosts(db) {
+  const member = await db.prepare('INSERT INTO members (display_name) VALUES (?)').run('Ananya Rao');
+  const olderPost = await db
     .prepare(
       `INSERT INTO posts (canonical_url, preview_author, first_shared_at, last_shared_at) VALUES (?, ?, ?, ?)`
     )
@@ -116,7 +116,7 @@ function seedPosts(db) {
       '2026-09-01T00:00:00.000Z',
       '2026-09-01T00:00:00.000Z'
     );
-  const newerPost = db
+  const newerPost = await db
     .prepare(`INSERT INTO posts (canonical_url, first_shared_at, last_shared_at) VALUES (?, ?, ?)`)
     .run(
       'https://www.linkedin.com/posts/unattributed-share',
@@ -124,20 +124,20 @@ function seedPosts(db) {
       '2026-09-10T00:00:00.000Z'
     );
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO sharing_events (post_id, group_id, raw_sender, member_id, message_timestamp) VALUES (?, 'group-a', 'Ananya Rao', ?, '2026-09-01T00:00:00.000Z')`
-  ).run(olderPost.lastInsertRowid, Number(member.lastInsertRowid));
-  db.prepare(
+  ).run(Number(olderPost.lastInsertRowid), Number(member.lastInsertRowid));
+  await db.prepare(
     `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 90000 00000', '2026-09-10T00:00:00.000Z')`
-  ).run(newerPost.lastInsertRowid);
+  ).run(Number(newerPost.lastInsertRowid));
 
   return { member, olderPost, newerPost };
 }
 
 test('GET / defaults to preview-first, most-recent-first and offers no order/sort control', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
     const okrIndex = res.text.indexOf('okr-season-7391');
@@ -151,17 +151,17 @@ test('GET / defaults to preview-first, most-recent-first and offers no order/sor
     assert.doesNotMatch(res.text, /data-testid="sort-toggle"/);
     assert.doesNotMatch(res.text, /most_shared/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /?sort=most_shared is ignored and still orders preview-first, most-recent-first', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     // Give the older post extra shares; a share-count sort would float it, but
     // that sort no longer exists, so the preview/recency order must still win.
-    db.prepare(
+    await db.prepare(
       `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES ((SELECT id FROM posts WHERE canonical_url LIKE '%okr-season%'), 'group-a', '+91 1', '2026-09-02T00:00:00.000Z')`
     ).run();
 
@@ -171,42 +171,42 @@ test('GET /?sort=most_shared is ignored and still orders preview-first, most-rec
     const unattributedIndex = res.text.indexOf('unattributed-share');
     assert.ok(okrIndex < unattributedIndex, 'preview/recency order still wins; ?sort=most_shared has no effect');
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /?member=<id> filters to that member and shows the member header', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    const { member } = seedPosts(db);
-    const res = await request(app).get(`/?member=${member.lastInsertRowid}`);
+    const { member } = await seedPosts(db);
+    const res = await request(app).get(`/?member=${Number(member.lastInsertRowid)}`);
     assert.equal(res.status, 200);
     // The okr post is author-only preview-available (no excerpt), so its
     // card headline is the author name -- the url slug no longer renders.
     assert.match(res.text, /Ananya Rao/);
     assert.doesNotMatch(res.text, /unattributed-share/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /?member=pending filters to posts with an unresolved sharer', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/?member=pending');
     assert.equal(res.status, 200);
     assert.match(res.text, /unattributed-share/);
     assert.doesNotMatch(res.text, /okr-season-7391/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /?q=<term> searches the post URL/slug and fetched preview text', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/?q=okr');
     assert.equal(res.status, 200);
     // The matched post is author-only preview-available (no excerpt), so its
@@ -214,14 +214,14 @@ test('GET /?q=<term> searches the post URL/slug and fetched preview text', async
     assert.match(res.text, /Ananya Rao/);
     assert.doesNotMatch(res.text, /unattributed-share/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET / renders a "Search" submit button grouped directly with the search input', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
     // The submit button is relabelled "Search" (it only submits the typed
@@ -235,33 +235,33 @@ test('GET / renders a "Search" submit button grouped directly with the search in
     );
     assert.ok(searchGroupMatch, 'expected the search input and "Search" button to be adjacent');
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /?q=<no match> shows the no-results state with a clear/reset action, not the first-run empty state', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/?q=nothing-matches-this');
     assert.equal(res.status, 200);
     assert.match(res.text, /No posts match/);
     assert.match(res.text, /data-testid="clear-filters"/);
     assert.doesNotMatch(res.text, /data-testid="empty-state-title"/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET / with no posts at all still shows the first-run empty state, not the no-results state', async () => {
-  const { app, close } = buildApp();
+  const { app, close } = await buildApp();
   try {
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
     assert.match(res.text, /No posts yet/);
     assert.doesNotMatch(res.text, /data-testid="no-results"/);
   } finally {
-    close();
+    await close();
   }
 });
 
@@ -269,56 +269,56 @@ test('GET / with no posts at all still shows the first-run empty state, not the 
 // cookie, not just a query param, so it survives navigation (e.g. back from
 // a post detail page) until the user picks a different layout again.
 test('GET / with no ?density and no cookie defaults to the Columns (cards) layout', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
     assert.match(res.text, /data-testid="post-list-cards"/);
     assert.doesNotMatch(res.text, /data-testid="post-list-rows"/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /?density=rows renders the Index layout and sets the layout cookie', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/?density=rows');
     assert.equal(res.status, 200);
     assert.match(res.text, /data-testid="post-list-rows"/);
     const setCookie = res.headers['set-cookie'] ?? [];
     assert.ok(setCookie.some((c) => /^layout=rows;/.test(c)), 'expected a layout=rows Set-Cookie header');
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET / carrying only a layout=rows cookie (no ?density) still renders rows -- this is the back-from-detail fix', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/').set('Cookie', 'layout=rows');
     assert.equal(res.status, 200);
     assert.match(res.text, /data-testid="post-list-rows"/);
     assert.doesNotMatch(res.text, /data-testid="post-list-cards"/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /?density=cards overrides an existing layout=rows cookie and re-sets the cookie to cards', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/?density=cards').set('Cookie', 'layout=rows');
     assert.equal(res.status, 200);
     assert.match(res.text, /data-testid="post-list-cards"/);
     const setCookie = res.headers['set-cookie'] ?? [];
     assert.ok(setCookie.some((c) => /^layout=cards;/.test(c)), 'expected a layout=cards Set-Cookie header');
   } finally {
-    close();
+    await close();
   }
 });
 
@@ -326,8 +326,8 @@ test('GET /?density=cards overrides an existing layout=rows cookie and re-sets t
 // (same rule the preview-first sort uses). Author name + excerpt should
 // headline the card/row; the generic "From the archive" kicker is reserved
 // for posts with neither.
-function seedPreviewAvailablePost(db) {
-  const post = db
+async function seedPreviewAvailablePost(db) {
+  const post = await db
     .prepare(
       `INSERT INTO posts (canonical_url, preview_author, preview_role, preview_excerpt, first_shared_at, last_shared_at)
        VALUES (?, ?, ?, ?, ?, ?)`
@@ -341,27 +341,27 @@ function seedPreviewAvailablePost(db) {
       '2026-09-01T00:00:00.000Z'
     );
   const postId = Number(post.lastInsertRowid);
-  db.prepare(
+  await db.prepare(
     `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 1', '2026-09-01T00:00:00.000Z')`
   ).run(postId);
   return postId;
 }
 
-function seedPreviewUnavailablePost(db) {
-  const post = db
+async function seedPreviewUnavailablePost(db) {
+  const post = await db
     .prepare(`INSERT INTO posts (canonical_url, preview_unavailable, first_shared_at, last_shared_at) VALUES (?, 1, ?, ?)`)
     .run('https://www.linkedin.com/posts/no-preview-9000', '2026-09-02T00:00:00.000Z', '2026-09-02T00:00:00.000Z');
   const postId = Number(post.lastInsertRowid);
-  db.prepare(
+  await db.prepare(
     `INSERT INTO sharing_events (post_id, group_id, raw_sender, message_timestamp) VALUES (?, 'group-a', '+91 2', '2026-09-02T00:00:00.000Z')`
   ).run(postId);
   return postId;
 }
 
 test('GET / (cards) shows the author as the kicker and the excerpt as the headline for a preview-available post, with no "From the archive" kicker', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPreviewAvailablePost(db);
+    await seedPreviewAvailablePost(db);
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
     assert.doesNotMatch(res.text, /From the archive/);
@@ -373,14 +373,14 @@ test('GET / (cards) shows the author as the kicker and the excerpt as the headli
     // the excerpt is now the headline, so repeating it would duplicate.
     assert.doesNotMatch(res.text, /PM @ Acme/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /?density=rows shows the excerpt as the prominent line and the author as a small label for a preview-available post', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPreviewAvailablePost(db);
+    await seedPreviewAvailablePost(db);
     const res = await request(app).get('/?density=rows');
     assert.equal(res.status, 200);
     assert.doesNotMatch(res.text, /From the archive/);
@@ -390,20 +390,20 @@ test('GET /?density=rows shows the excerpt as the prominent line and the author 
     assert.ok(authorIndex < excerptIndex, 'the author label should render above the excerpt line');
     assert.doesNotMatch(res.text, /PM @ Acme/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET / (cards) still shows "From the archive" for a preview-unavailable post', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPreviewUnavailablePost(db);
+    await seedPreviewUnavailablePost(db);
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
     assert.match(res.text, /From the archive/);
     assert.match(res.text, /Preview unavailable/);
   } finally {
-    close();
+    await close();
   }
 });
 
@@ -412,9 +412,9 @@ test('GET / (cards) still shows "From the archive" for a preview-unavailable pos
 // post-results cell and the Correspondents rail are siblings (results on the
 // left, rail on the right).
 test('GET / lays out a full-width controls band, a rule, then the results cell and the correspondent rail as content-row siblings', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPosts(db);
+    await seedPosts(db);
     const res = await request(app).get('/');
     assert.equal(res.status, 200);
 
@@ -441,18 +441,18 @@ test('GET / lays out a full-width controls band, a rule, then the results cell a
     assert.doesNotMatch(res.text, /data-testid="member-rail-head"/);
     assert.match(res.text, /data-testid="member-rail"[^]*?Correspondents/);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('GET /?density=rows still renders a preview-unavailable post without an author label or excerpt text', async () => {
-  const { app, close, db } = buildApp();
+  const { app, close, db } = await buildApp();
   try {
-    seedPreviewUnavailablePost(db);
+    await seedPreviewUnavailablePost(db);
     const res = await request(app).get('/?density=rows');
     assert.equal(res.status, 200);
     assert.match(res.text, /Preview unavailable/);
   } finally {
-    close();
+    await close();
   }
 });
