@@ -76,6 +76,23 @@ test('POST /import without a group shows an error', async () => {
   }
 });
 
+test('POST /import rejects an over-50MB upload cleanly rather than crashing', async () => {
+  const { app, close } = await buildApp();
+  try {
+    const agent = await loginAsAdmin(app, ADMIN_TOKEN);
+    const oversize = Buffer.alloc(50 * 1024 * 1024 + 1, 'a');
+    const res = await agent
+      .post('/import')
+      .field('groupId', 'product-chai')
+      .attach('file', oversize, 'chat.txt');
+
+    assert.equal(res.status, 413);
+    assert.match(res.text, /too large/i);
+  } finally {
+    await close();
+  }
+});
+
 test('re-uploading a byte-identical file surfaces the duplicate warning', async () => {
   const { app, close } = await buildApp();
   try {

@@ -61,7 +61,11 @@ function readGutterPhotoFilenames() {
 export function createApp(db, options = {}) {
   const app = express();
   const adminToken = options.adminToken ?? process.env.ADMIN_TOKEN;
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+  // 50 MB cap (down from 200 MB): the free-tier host has ~512 MB RAM and
+  // multer buffers the whole upload in memory before the route handler ever
+  // runs; WhatsApp *text* exports are small (media isn't parsed), so this
+  // only ever rejects pathological uploads.
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
   app.use(express.urlencoded({ extended: false }));
   app.use(detectAdmin(adminToken));
@@ -355,7 +359,36 @@ export function createApp(db, options = {}) {
     }
   });
 
-  app.post('/import', requireAdmin, upload.single('file'), async (req, res, next) => {
+  // Oversize uploads (guard, protects the free instance's ~512 MB RAM):
+  // multer's own error (thrown before the route handler runs) is caught here
+  // and rendered as a normal import-page error rather than falling through
+  // to Express's default 500 handler.
+  app.post('/import', requireAdmin, (req, res, next) => {
+    upload.single('file')(req, res, async (err) => {
+      if (err) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          try {
+            const data = await getDashboard(db);
+            res.status(413).send(
+              layout({
+                title: 'Import',
+                active: 'import',
+                isAdmin: req.isAdmin,
+                lastUpdated: data.lastUpdated,
+                body: renderImportPage({ error: 'That file is too large. The maximum import size is 50MB.' }),
+              })
+            );
+          } catch (renderErr) {
+            next(renderErr);
+          }
+          return;
+        }
+        next(err);
+        return;
+      }
+      next();
+    });
+  }, async (req, res, next) => {
     try {
       const groupId = req.body?.groupId;
       const file = req.file;
