@@ -32,6 +32,22 @@ export async function openDb(config) {
   const base = wrap((stmt) => (typeof stmt === 'string' ? client.executeMultiple(stmt) : client.execute(stmt)));
   return {
     ...base,
+    // Run many statements in ONE network round-trip, atomically (libSQL runs a
+    // batch inside an implicit transaction). Each statement is {sql, args};
+    // later statements see earlier ones' writes, so an INSERT can reference a
+    // row an earlier INSERT in the same batch created. Returns one result per
+    // statement (with the `changes` alias) so callers can count affected rows.
+    // This is what makes bulk ingest fast over a networked DB — per-row round
+    // trips would otherwise be thousands of network calls.
+    async batch(statements, mode = 'write') {
+      const results = await client.batch(statements, mode);
+      return results.map((r) => ({
+        rowsAffected: r.rowsAffected,
+        changes: r.rowsAffected,
+        lastInsertRowid: r.lastInsertRowid,
+        rows: r.rows,
+      }));
+    },
     async transaction(fn) {
       const tx = await client.transaction('write');
       // Inside a transaction, statements run on `tx`, not the base client.
