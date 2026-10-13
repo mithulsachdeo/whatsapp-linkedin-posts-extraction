@@ -16,7 +16,7 @@ const URL = 'https://www.linkedin.com/posts/priya-sharma_activity-1-abcd';
 const TEXT = `30/09/26, 10:15 - Priya Sharma: ${URL}`;
 
 test('a successful preview fetch is cached on the new post', async () => {
-  const { db, close } = createTestDb();
+  const { db, close } = await createTestDb();
   try {
     let calls = 0;
     const previewFetcher = {
@@ -27,22 +27,22 @@ test('a successful preview fetch is cached on the new post', async () => {
       },
     };
 
-    const result = ingest(db, TEXT, GROUP, { previewFetcher });
+    const result = await ingest(db, TEXT, GROUP, { previewFetcher });
     await result.previewFetchesSettled;
 
     assert.equal(calls, 1);
-    const dashboard = getDashboard(db);
+    const dashboard = await getDashboard(db);
     assert.equal(dashboard.posts[0].previewAuthor, 'Priya Sharma');
     assert.equal(dashboard.posts[0].previewRole, 'Product @ Acme');
     assert.equal(dashboard.posts[0].previewExcerpt, 'Worth a read.');
     assert.equal(dashboard.posts[0].previewUnavailable, false);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('a failed preview fetch marks the post preview_unavailable without failing ingestion', async () => {
-  const { db, close } = createTestDb();
+  const { db, close } = await createTestDb();
   try {
     const previewFetcher = {
       async fetch() {
@@ -50,23 +50,23 @@ test('a failed preview fetch marks the post preview_unavailable without failing 
       },
     };
 
-    const result = ingest(db, TEXT, GROUP, { previewFetcher });
+    const result = await ingest(db, TEXT, GROUP, { previewFetcher });
     // Ingestion itself must succeed regardless of the fetch outcome.
     assert.equal(result.newSharingEvents, 1);
     assert.equal(result.newPosts, 1);
 
     await result.previewFetchesSettled;
 
-    const dashboard = getDashboard(db);
+    const dashboard = await getDashboard(db);
     assert.equal(dashboard.posts[0].previewUnavailable, true);
     assert.equal(dashboard.posts[0].previewAuthor, null);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('the preview fetcher is called once per new post, not again when the post already exists', async () => {
-  const { db, close } = createTestDb();
+  const { db, close } = await createTestDb();
   try {
     let calls = 0;
     const previewFetcher = {
@@ -76,73 +76,73 @@ test('the preview fetcher is called once per new post, not again when the post a
       },
     };
 
-    const first = ingest(db, TEXT, GROUP, { previewFetcher });
+    const first = await ingest(db, TEXT, GROUP, { previewFetcher });
     await first.previewFetchesSettled;
 
-    const second = ingest(db, TEXT, GROUP, { previewFetcher }); // byte-identical re-import, no new post
+    const second = await ingest(db, TEXT, GROUP, { previewFetcher }); // byte-identical re-import, no new post
     await second.previewFetchesSettled;
 
     assert.equal(calls, 1);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('ingest defaults to a safe, no-network preview fetcher that marks preview_unavailable', async () => {
-  const { db, close } = createTestDb();
+  const { db, close } = await createTestDb();
   try {
-    const result = ingest(db, TEXT, GROUP); // no previewFetcher supplied
+    const result = await ingest(db, TEXT, GROUP); // no previewFetcher supplied
     await result.previewFetchesSettled;
 
-    const dashboard = getDashboard(db);
+    const dashboard = await getDashboard(db);
     assert.equal(dashboard.posts[0].previewUnavailable, true);
   } finally {
-    close();
+    await close();
   }
 });
 
 test('an admin-edited preview overrides the fetched value and survives a later re-import', async () => {
-  const { db, close } = createTestDb();
+  const { db, close } = await createTestDb();
   try {
     const autoFetcher = {
       async fetch() {
         return { author: 'Auto Author', role: null, excerpt: 'Auto excerpt' };
       },
     };
-    const first = ingest(db, TEXT, GROUP, { previewFetcher: autoFetcher });
+    const first = await ingest(db, TEXT, GROUP, { previewFetcher: autoFetcher });
     await first.previewFetchesSettled;
 
-    const post = db.prepare('SELECT id FROM posts').get();
-    setPreviewOverride(db, post.id, { author: 'Admin Author', role: 'Admin Role', excerpt: 'Admin excerpt' });
+    const post = await db.prepare('SELECT id FROM posts').get();
+    await setPreviewOverride(db, post.id, { author: 'Admin Author', role: 'Admin Role', excerpt: 'Admin excerpt' });
 
     // Re-importing the same export is a no-op for an existing post (no new
     // fetch is triggered), which is itself how the override survives.
-    const again = ingest(db, TEXT, GROUP, { previewFetcher: autoFetcher });
+    const again = await ingest(db, TEXT, GROUP, { previewFetcher: autoFetcher });
     await again.previewFetchesSettled;
 
-    const dashboard = getDashboard(db);
+    const dashboard = await getDashboard(db);
     assert.equal(dashboard.posts[0].previewAuthor, 'Admin Author');
     assert.equal(dashboard.posts[0].previewRole, 'Admin Role');
     assert.equal(dashboard.posts[0].previewExcerpt, 'Admin excerpt');
     assert.equal(dashboard.posts[0].previewUnavailable, false);
   } finally {
-    close();
+    await close();
   }
 });
 
-test('cacheFetchedPreview never overwrites an admin-edited preview, even if invoked directly', () => {
-  const { db, close } = createTestDb();
+test('cacheFetchedPreview never overwrites an admin-edited preview, even if invoked directly', async () => {
+  const { db, close } = await createTestDb();
   try {
-    const inserted = db.prepare('INSERT INTO posts (canonical_url) VALUES (?)').run(URL);
+    const inserted = await db.prepare('INSERT INTO posts (canonical_url) VALUES (?)').run(URL);
     const postId = Number(inserted.lastInsertRowid);
-    setPreviewOverride(db, postId, { author: 'Admin Author', role: null, excerpt: null });
+    await setPreviewOverride(db, postId, { author: 'Admin Author', role: null, excerpt: null });
 
-    cacheFetchedPreview(db, postId, { author: 'Fetched Author', role: 'Fetched role', excerpt: 'Fetched excerpt' });
+    await cacheFetchedPreview(db, postId, { author: 'Fetched Author', role: 'Fetched role', excerpt: 'Fetched excerpt' });
 
-    const row = db.prepare('SELECT preview_author, preview_role FROM posts WHERE id = ?').get(postId);
+    const row = await db.prepare('SELECT preview_author, preview_role FROM posts WHERE id = ?').get(postId);
     assert.equal(row.preview_author, 'Admin Author');
     assert.equal(row.preview_role, null);
   } finally {
-    close();
+    await close();
   }
 });
