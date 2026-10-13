@@ -19,7 +19,7 @@ services:
     name: postboard
     runtime: node
     plan: free
-    branch: design/industry-new2
+    branch: feat/turso-migration
     buildCommand: npm install
     startCommand: node src/server.js
     healthCheckPath: /
