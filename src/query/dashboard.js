@@ -99,7 +99,7 @@ function buildDateRangeCondition(options) {
 }
 
 /**
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} db  Async libSQL DB adapter (see openDb in db/connection.js)
  * @param {{
  *   sort?: 'recent', memberId?: number, pending?: boolean, search?: string,
  *   view?: 'unread' | 'read' | 'all', readIds?: number[],
@@ -181,7 +181,7 @@ export async function getDashboard(db, options = {}) {
  * bounds would shrink to whatever was just picked, which is circular).
  * Expressed as IST calendar dates for the <input type="date"> min/max
  * attributes. Null for both when the filtered set has zero posts.
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} db  Async libSQL DB adapter (see openDb in db/connection.js)
  * @param {{ memberId?: number, pending?: boolean, search?: string, view?: 'unread'|'read'|'all', readIds?: number[] }} [options]
  * @returns {Promise<{ min: string | null, max: string | null }>}
  */
@@ -212,7 +212,7 @@ export async function getDateRangeBounds(db, options = {}) {
  * is the implicit default (not included here); pending attribution is
  * surfaced as a filter choice alongside each resolved member, and omitted
  * entirely once no post has an unresolved sharer.
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} db  Async libSQL DB adapter (see openDb in db/connection.js)
  * @returns {Promise<{ totalCount: number, pendingCount: number, members: Array<{ id: number, displayName: string, postCount: number }> }>}
  */
 export async function getMemberFilterOptions(db) {
@@ -242,7 +242,7 @@ export async function getMemberFilterOptions(db) {
  * in the view), timestamp, group (admin-only per the group-hidden rule --
  * the query always returns it, the view decides whether to render it), and
  * optional note. The earliest event is flagged `isFirstShare`.
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} db  Async libSQL DB adapter (see openDb in db/connection.js)
  * @param {number} postId
  * @returns {Promise<{
  *   id: number, url: string,
@@ -324,7 +324,7 @@ export async function getPostDetail(db, postId) {
  * redirect route needs. Deliberately not reusing getPostDetail: that pulls
  * the full share history, which the redirect has no use for, and this needs
  * to stay cheap since it's on the hot path of every outbound click.
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} db  Async libSQL DB adapter (see openDb in db/connection.js)
  * @param {number} postId
  * @returns {Promise<string | null>}
  */

@@ -17,7 +17,7 @@ import { cacheFetchedPreview, markPreviewUnavailable } from '../preview/previewC
 import { NullShortLinkResolver } from './shortLinkResolver.js';
 
 /**
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} db  Async libSQL DB adapter (see openDb in db/connection.js)
  * @param {string} rawExportText decoded chat export text
  * @param {string} groupId admin-selected group for this upload (stored, not shown)
  * @param {{

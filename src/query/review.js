@@ -2,7 +2,7 @@
 // module: the HTTP layer renders through this and tests assert through it.
 
 /**
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} db  Async libSQL DB adapter (see openDb in db/connection.js)
  * @returns {Promise<Array<{ id: number, rawSender: string, shareCount: number, firstSeen: string|null }>>}
  */
 export async function getUnknownSenderReviewItems(db) {
@@ -34,7 +34,7 @@ export async function getUnknownSenderReviewItems(db) {
 }
 
 /**
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} db  Async libSQL DB adapter (see openDb in db/connection.js)
  * @returns {Promise<Array<{ id: number, url: string, rawSender: string, timestamp: string, note: string|null, createdAt: string }>>}
  */
 export async function getOtherLinkedInReviewItems(db) {
@@ -60,7 +60,7 @@ export async function getOtherLinkedInReviewItems(db) {
 }
 
 /**
- * @param {import('node:sqlite').DatabaseSync} db
+ * @param {object} db  Async libSQL DB adapter (see openDb in db/connection.js)
  * @returns {Promise<Array<{ id: number, displayName: string }>>}
  */
 export async function getMembers(db) {
