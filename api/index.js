@@ -1,12 +1,10 @@
-// Vercel serverless entry. The Turso migration made this possible: the DB is
-// remote (no disk) and the background schedulers are gone, so the whole app is
-// just a request handler. This file reuses the SAME createApp() the local
-// server (src/server.js) uses — no behavior fork.
-//
-// Cold start cost (opening the libSQL connection + running migrations) is paid
-// ONCE per warm instance and memoized as a promise; subsequent invocations on
-// the same instance reuse it. resolveDbConfig() reads DATABASE_URL +
-// DATABASE_AUTH_TOKEN from the Vercel env in production.
+// Vercel serverless entry. Vercel's Express zero-config detector looks for an
+// entrypoint that DIRECTLY imports express and exports an app (never calls
+// listen) — so this file does exactly that: it exports a tiny gating Express
+// app whose only job is to lazily build the REAL app (open the libSQL
+// connection + run migrations ONCE, memoized across warm invocations) and
+// delegate every request to it. Reuses the same createApp() as src/server.js.
+import express from 'express';
 import { createApp } from '../src/http/app.js';
 import { openDb } from '../src/db/connection.js';
 import { resolveDbConfig } from '../src/db/config.js';
@@ -14,13 +12,14 @@ import { migrate } from '../src/db/migrate.js';
 import { HttpPreviewFetcher } from '../src/preview/previewFetcher.js';
 import { HttpShortLinkResolver } from '../src/ingest/shortLinkResolver.js';
 
-let appPromise;
+let realAppPromise;
 
-// Exported so tests can exercise the exact wiring Vercel runs (against an
-// in-memory DB under NODE_ENV=test) without going through the Vercel runtime.
+// Returns a promise of the fully-built app (DB opened + migrated). Memoized so
+// the cold-start cost is paid once per warm instance. A failed init is NOT
+// cached, so the next request retries a clean cold start. Exported for tests.
 export function getApp() {
-  if (!appPromise) {
-    appPromise = (async () => {
+  if (!realAppPromise) {
+    realAppPromise = (async () => {
       const db = await openDb(resolveDbConfig());
       await migrate(db);
       return createApp(db, {
@@ -28,16 +27,24 @@ export function getApp() {
         shortLinkResolver: HttpShortLinkResolver,
       });
     })().catch((err) => {
-      // Don't cache a failed init — let the next invocation retry a cold start
-      // rather than wedging the instance on a transient DB hiccup.
-      appPromise = undefined;
+      realAppPromise = undefined;
       throw err;
     });
   }
-  return appPromise;
+  return realAppPromise;
 }
 
-export default async function handler(req, res) {
-  const app = await getApp();
-  return app(req, res);
-}
+// The exported entrypoint: an Express app that awaits readiness then hands the
+// whole request to the real app. No body parser here, so the raw request
+// stream reaches the real app's urlencoded/multer parsers intact.
+const app = express();
+app.use(async (req, res, next) => {
+  try {
+    const realApp = await getApp();
+    realApp(req, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default app;
